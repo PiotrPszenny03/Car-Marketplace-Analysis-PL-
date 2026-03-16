@@ -1,149 +1,48 @@
-Used Car Market Analysis & Price Prediction Engine
-(Wstaw tu jakiś reprezentatywny wykres, np. macierz korelacji lub wykres deprecjacji)
-
-🎯 Project Goal
-The primary objective of this project was to perform a multi-dimensional analysis of the secondary automotive market in Poland. Using real-world data (scraped between March–May 2021), the study aims to decode the mechanisms governing vehicle valuation.
-
-Beyond standard exploratory analysis, this project implements a Machine Learning model (Random Forest) to:
-
-Quantify Determinants: Identify which technical parameters and equipment features drive market value.
-
-Predict Prices: Build an interpretable model for automatic vehicle valuation.
-
-Detect Anomalies: Identify undervalued assets ("market opportunities") by analyzing prediction residuals.
-
-💻 Tech Stack & Methodology
-Language:
-
-Libraries: tidyverse (dplyr, ggplot2), randomForest, caret, lmtest.
-
-Statistical Methods: Student's t-test, Shapiro-Wilk, Factor Analysis.
-
-Machine Learning:  / Random Forest Ensemble.
-
-📊 Key Research Findings
-1. Depreciation Dynamics (Premium vs. Budget)
-Hypothesis: Does value loss occur uniformly across the market?
-
-Finding: No. The analysis revealed significant heterogeneity. Premium brands, despite higher initial costs, experience steeper absolute depreciation in early years. However, they exhibit better "value retention" in later years compared to budget cars, indicating a non-linear relationship between age and brand prestige.
-
-2. Impact of Equipment on Valuation
-Method: Validated using ANOVA and t-tests.
-
-Finding: Luxury features (e.g., leather upholstery, advanced ADAS systems) provide a statistically significant price premium. Interestingly, this premium varies by segment—it is much higher for SUVs and Premium cars than for City cars, confirming that the market values configuration contextually.
-
-3. Price Determinants
-Key Drivers: Engine Power (positive correlation) and Age/Mileage (negative correlation).
-
-Non-Linearity: The negative impact of mileage on price diminishes as the vehicle ages. This was confirmed by interaction analysis in the Random Forest model.
-
-🤖 Machine Learning Model (Random Forest)
-To address the market's complexity and information asymmetry, I moved beyond linear regression to a Random Forest model.
-
-Model Performance & Anomaly Detection
-Why Random Forest? Linear models failed to capture the complex, non-linear interactions between brand prestige, age, and equipment.
-
-Market Opportunity Detection: By analyzing the residuals (difference between Actual Price and Predicted Price), I identified market anomalies.
-
-Offers where Predicted Price >> Actual Price were flagged as potential "bargains" or undervalued assets.
-
-The model achieved highest accuracy in the mid-range price segment, with increased variance in the ultra-luxury segment (outliers).
-
-📂 Project Structure
-
-The repository contains the full analysis workflow:
-├── data/                       # Dataset (cleaned and raw)
-├── images/                     # Visualizations exported from R
-├── script/                     # R Scripts for Cleaning, EDA, and Modeling
-├── Used_Car_Analysis.pdf       # Full Report (R Markdown Output)
-└── README.md                   # Documentation
-
-Gemini said
-To jest znakomity materiał. Ten spis treści i wnioski pokazują, że to nie był prosty projekt "narysuj wykres", ale pełnoprawne badanie Data Science.
-
-Masz tu wszystko, co kochają banki:
-
-Data Cleaning (walidacja, braki danych).
-
-Statystyka (ANOVA, testy t-Studenta, korelacje).
-
-Machine Learning (Las Losowy - Random Forest).
-
-Wnioski biznesowe (krzywe deprecjacji, segmentacja Premium vs Standard).
-
-Oto kompletny kod README.md przygotowany specjalnie pod ten wsad. Przetłumaczyłem to na profesjonalny angielski, używając terminologii z zakresu Valuation & Risk Modeling.
-
-Skopiuj to do pliku README.md w repozytorium Econometric_Analysis_R.
-
-Used Car Market Analysis & Price Prediction Engine
-(Wstaw tu jakiś reprezentatywny wykres, np. macierz korelacji lub wykres deprecjacji)
-
-🎯 Project Goal
-The primary objective of this project was to perform a multi-dimensional analysis of the secondary automotive market in Poland. Using real-world data (scraped between March–May 2021), the study aims to decode the mechanisms governing vehicle valuation.
-
-Beyond standard exploratory analysis, this project implements a Machine Learning model (Random Forest) to:
-
-Quantify Determinants: Identify which technical parameters and equipment features drive market value.
-
-Predict Prices: Build an interpretable model for automatic vehicle valuation.
-
-Detect Anomalies: Identify undervalued assets ("market opportunities") by analyzing prediction residuals.
-
-💻 Tech Stack & Methodology
-Language:
-
-Libraries: tidyverse (dplyr, ggplot2), randomForest, caret, lmtest.
-
-Statistical Methods: ANOVA, Student's t-test, Shapiro-Wilk, Breusch-Pagan, Factor Analysis.
-
-Machine Learning: Regression Trees / Random Forest Ensemble.
-
-📊 Key Research Findings
-1. Depreciation Dynamics (Premium vs. Budget)
-Hypothesis: Does value loss occur uniformly across the market?
-
-Finding: No. The analysis revealed significant heterogeneity. Premium brands, despite higher initial costs, experience steeper absolute depreciation in early years. However, they exhibit better "value retention" in later years compared to budget cars, indicating a non-linear relationship between age and brand prestige.
-
-2. Impact of Equipment on Valuation
-Method: Validated using ANOVA and t-tests.
-
-Finding: Luxury features (e.g., leather upholstery, advanced ADAS systems) provide a statistically significant price premium. Interestingly, this premium varies by segment—it is much higher for SUVs and Premium cars than for City cars, confirming that the market values configuration contextually.
-
-3. Price Determinants
-Key Drivers: Engine Power (positive correlation) and Age/Mileage (negative correlation).
-
-Non-Linearity: The negative impact of mileage on price diminishes as the vehicle ages. This was confirmed by interaction analysis in the Random Forest model.
-
-🤖 Machine Learning Model (Random Forest)
-To address the market's complexity and information asymmetry, I moved beyond linear regression to a Random Forest model.
-
-Model Performance & Anomaly Detection
-Why Random Forest? Linear models failed to capture the complex, non-linear interactions between brand prestige, age, and equipment.
-
-Market Opportunity Detection: By analyzing the residuals (difference between Actual Price and Predicted Price), I identified market anomalies.
-
-Offers where Predicted Price >> Actual Price were flagged as potential "bargains" or undervalued assets.
-
-The model achieved highest accuracy in the mid-range price segment, with increased variance in the ultra-luxury segment (outliers).
-
-📂 Project Structure
-The repository contains the full analysis workflow:
-
-Plaintext
-├── data/                       # Dataset (cleaned and raw)
-├── images/                     # Visualizations exported from R
-├── script/                     # R Scripts for Cleaning, EDA, and Modeling
-├── Used_Car_Analysis.pdf       # Full Report (R Markdown Output)
-└── README.md                   # Documentation
-🚀 How to Run
-Clone the repository.
-
-Open the .Rmd (R Markdown) file in RStudio.
-
-Ensure all packages listed in setup chunk are installed.
-
-Run the chunks sequentially to reproduce the Data Cleaning -> EDA -> Modeling pipeline.
-
-👤 Author
-Piotr Pszenny
-Aspiring Risk & Data Analyst | Gdańsk Tech
+# Car Marketplace Analysis
+# Project Goal
+The primary objective of this project was to conduct a multidimensional analysis of the secondary car market in Poland and build an interpretable machine learning model to automatically estimate vehicle prices and detect market opportunities.
+Unlike standard statistical reports, this project covers the full data science lifecycle. It allows stakeholders to:
+*   **Understand Market Structure:** Explore how prices, depreciation, and features vary across brands and regions using advanced interactive visualizations.
+*   **Identify Key Price Determinants:** Statistically verify which technical parameters and equipment pieces genuinely drive a vehicle's value.
+*   **Detect Market Opportunities:** Use a Machine Learning (Random Forest) model to calculate the "Fair Price" of a car and automatically flag undervalued offers ("Super Deals") or overpriced listings.
+*   **Explain AI Decisions:** Utilize Explainable AI (XAI) to understand exactly why the model priced a specific car the way it did, feature by feature.
+# 💻 Technologies & Tools
+*   **R & R Markdown** – Main statistical programming language and reporting framework used to build reproducible research.
+*   **Tidyverse & dplyr** – For robust data wrangling, cleaning, and preprocessing.
+*   **ggplot2 & Plotly** – For generating static and interactive data visualizations (Treemaps, Waffle charts).
+*   **Leaflet & sf** – For spatial data analysis and interactive regional price mapping across Polish voivodeships.
+*   **Ranger** – Fast implementation of the Random Forest algorithm used for predictive price modeling.
+*   **DALEX** – Used for Descriptive Machine Learning Explanations (Variable Importance, Partial Dependence Profiles, and Break-Down plots).
+*   **naniar & VIM** – For missing data visualization and advanced hot-deck imputation.
+# 📊 Key Features & Architecture
+**Agent/Module 1: Data Preprocessing & Validation**
+*   **The Insight:** Automatically handles missing data and applies strict rule-based validation (e.g., verifying realistic mileage and price ranges).
+*   **Business Value:** Cleans the raw data from scraped listings, ensuring that the predictive models are trained on reliable, high-quality information without anomalies.
+**Module 2: Market Exploratory & Spatial Analysis**
+*   **The Insight:** Employs interactive hierarchy maps, spatial cartograms (Leaflet), and depreciation curves to show market dominance, regional price differences, and how fast specific brands lose value.
+*   **Business Value:** Provides an intuitive overview for quick decision-making, helping buyers understand which brands retain value (like Porsche) and where cars are statistically cheaper.
+**Module 3: The ML Opportunity Scanner (Random Forest)**
+*   **The Insight:** A predictive model acting as an automated evaluator. It compares the actual listing price with the model-calculated "Fair Value", grouping them into segments (e.g., "Super Deal", "Market Price", "Overpriced").
+*   **Business Value:** Allows users to filter thousands of listings to find genuinely undervalued cars, completely ignoring emotional or biased pricing from sellers.
+**Module 4: Explainable AI (DALEX)**
+*   **The Insight:** Generates Waterfall (Break-Down) plots for individual vehicle listings.
+*   **Business Value:** Delivers a transparent verdict on pricing. It breaks down the price of a chosen car to show exactly how much value is added or subtracted by its mileage, engine power, or specific transmission type.
+# 📂 Project Structure
+The repository is organized as follows:
+*   [Projekt.Rmd](cci:7://file:///c:/Users/PC/Downloads/Projekt.Rmd:0:0-0:0) - The core R Markdown file containing all the data processing logic, exploratory analysis, and ML model definitions.
+*   `Car_sale_ads.csv.zip` - The compressed dataset containing the used car sales offers (March–May 2021).
+*   `x.css` - Custom stylesheet used for formatting the HTML output report.
+*   `README.md` - Project documentation (This file).
+# 🚀 How to Run
+1.  Clone this repository to your local machine.
+2.  Ensure you have **R** and **RStudio** installed.
+3.  Install the necessary dependencies by running the following in your R console:
+    ```R
+    install.packages(c("tidyverse", "ggplot2", "plotly", "leaflet", "ranger", "DALEX", "naniar", "validate", "giscoR"))
+    ```
+4.  Make sure the `Car_sale_ads.csv.zip` file is located in the same directory as the project files.
+5.  Open [Projekt.Rmd](cci:7://file:///c:/Users/PC/Downloads/Projekt.Rmd:0:0-0:0) in RStudio.
+6.  Click the **"Knit"** button (or press `Ctrl+Shift+K`) to run the complete analysis pipeline and generate the interactive HTML report.
+# 👤 Authors
+**Piotr Pszenny, Polina Glamozdova, Julia Kolerska**
+*Data Science Project*
