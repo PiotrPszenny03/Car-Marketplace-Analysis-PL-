@@ -1,0 +1,1467 @@
+---
+title: "Analiza Rynku Samochodów Używanych"
+subtitle: "Projekt Zaliczeniowy - Data Science"
+author: "Piotr Pszenny, Polina Glamozdova, Julia Kolerska"
+date: "r 31.01.2026"
+output: 
+  html_document:
+    css: x.css
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+---
+
+```{=html}
+<script>
+  $(document).ready(function() {
+    $('.title').prepend('<img src="Wydział_WZiE_desktop-02.png" style="display: block; margin: 0 auto 20px auto; width: 300px;">');
+  });
+</script> 
+```
+
+```{r setup, include = FALSE}
+## Global options
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	Echo = FALSE
+)
+library(tidyverse)
+library(ggplot2)
+# --- USTAWIENIE MOTYWU WYKRESÓW GGPLOT ZGODNEGO Z PG ---
+# To sprawi, że wszystkie wykresy w raporcie będą miały kolory uczelni
+
+theme_pg <- function() {
+  theme_minimal() +
+  theme(
+    text = element_text(family = "Arial", color = "#333333"),
+    plot.title = element_text(face = "bold", size = 16, color = "#010467"), # Granatowy tytuł
+    plot.subtitle = element_text(size = 12, color = "#0939FA"), # Czerwony podtytuł
+    axis.title = element_text(face = "bold", size = 11, color = "#010467"),
+    panel.grid.major = element_line(color = "#e0e0e0"),
+    panel.grid.minor = element_blank(),
+    legend.position = "bottom"
+  )
+}
+
+# Ustawiamy ten motyw jako domyślny dla całego dokumentu
+theme_set(theme_pg())
+
+# Kolory do wykresów (zdefiniowane jako zmienne globalne)
+col_pg_granat <- "#010467"
+col_pg_czerwony <- "#ff0f0f"
+col_pg_jasny <- "#BADEFF"
+paleta_pg  <- c(
+  "#010467",  
+   "#ff0f0f",  
+   "#BADEFF",  
+   "#38BDF8",  
+    "#0939FA", 
+  "#E2E8F0"  
+)
+
+library(psych)
+library(rmdformats)
+library(lubridate)
+library(naniar)
+library(visdat)
+library(mice)
+library(Amelia)
+library(VIM)
+library(validate)
+library(validatetools)
+library(errorlocate)
+library(ggplot2)
+library(scales)
+library(dplyr)
+library(treemap)
+library(plotly)
+library(qwraps2)
+library(EnvStats)
+library(kableExtra)
+library(RColorBrewer)
+library(e1071)
+library(sf)
+library(leaflet)
+library(giscoR)
+library(htmltools)
+library(rmapshaper)
+library(corrplot)
+library(ranger)
+library(ComplexUpset)
+library(haven)
+library(DT)
+library(tidytext)
+library(ggpubr)
+library(DALEX)
+library(reshape2)
+```
+
+# **Wstęp**
+
+Projekt poświęcony jest wielowymiarowej analizie wtórnego rynku samochodowego w Polsce, bazuje na rzeczywistych danych ofertowych pochodzących z wiodącego serwisu ogłoszeniowego (dane z okresu: marzec–maj 2021). Rynek samochodów używanych charakteryzuje się dużą złożonością, asymetrią informacji oraz występowaniem licznych anomalii cenowych, co czyni go interesującym obiektem badań statystycznych.
+
+Niniejsza praca obejmuje pełny cykl analityczny: począwszy od wstępnego przetwarzania i czyszczenia surowych danych, poprzez zaawansowaną eksplorację wizualną, aż po budowę modeli uczenia maszynowego. Szczególny nacisk położono nie tylko na opisanie struktury rynku, ale przede wszystkim na zrozumienie mechanizmów rządzących wyceną pojazdów oraz weryfikację potocznych opinii rynkowych w oparciu o twarde dane.
+
+## Cel
+
+Głównym celem pracy jest zidentyfikowanie kluczowych determinantów wartości rynkowej samochodów osobowych oraz budowa interpretowalnego modelu predykcyjnego, pozwalającego na automatyczną wycenę pojazdów i detekcję okazji rynkowych.
+
+## Pytania badawcze
+
+W celu nadania analizie odpowiedniego kierunku oraz precyzyjnego określenia, jakie informacje mają zostać pozyskane z danych, sformułowano zestaw pytań badawczych:
+
+1.  **Które parametry techniczne i elementy wyposażenia są kluczowymi determinantami ceny pojazdu?**
+
+2.  **Czy dynamika utraty wartości jest jednorodna dla całego rynku, czy też występują istotne różnice w tempie spadku cen pomiędzy markami popularnymi a segmentem premium?**
+
+3.  **Czy obecność wyposażenia luksusowego w sposób istotny statystycznie różnicuje średnią cenę ofertową pojazdu?**
+
+4.  **W jakim stopniu algorytmy uczenia maszynowego (Random Forest) pozwalają na automatyczną identyfikację anomalii cenowych ("okazji rynkowych") i w których segmentach cenowych ich predykcje są najbardziej precyzyjne?**
+
+```{r, echo=FALSE}
+# Wczytanie danych
+dane_p <- read_csv(unz("Car_sale_ads.csv.zip", "Car_sale_ads.csv"))
+dane <- subset(dane_p, select = -c(Vehicle_version, Vehicle_generation, Origin_country, First_registration_date, CO2_emissions))
+
+dane$Cena_PLN <- ifelse(dane$Currency == "PLN", dane$Price, round(dane$Price * 4.5))
+dane$First_owner <- ifelse(is.na(dane$First_owner) == TRUE , "No", "Yes")
+
+#województwa
+dane <- dane %>%
+  mutate(
+    wojewodztwo = case_when(
+      str_detect(Offer_location, regex("dolnośląskie|Wrocław", ignore_case = TRUE)) ~ "dolnośląskie",
+      str_detect(Offer_location, regex("kujawsko-pomorskie|Bydgoszcz|Toruń", ignore_case = TRUE)) ~ "kujawsko-pomorskie",
+      str_detect(Offer_location, regex("lubelskie|Lublin", ignore_case = TRUE)) ~ "lubelskie",
+      str_detect(Offer_location, regex("lubuskie|Gorzów Wielkopolski|Zielona Góra", ignore_case = TRUE)) ~ "lubuskie",
+      str_detect(Offer_location, regex("łódzkie|Łódź", ignore_case = TRUE)) ~ "łódzkie",
+      str_detect(Offer_location, regex("małopolskie|Kraków", ignore_case = TRUE)) ~ "małopolskie",
+      str_detect(Offer_location, regex("mazowieckie|Warszawa", ignore_case = TRUE)) ~ "mazowieckie",
+      str_detect(Offer_location, regex("opolskie|Opole", ignore_case = TRUE)) ~ "opolskie",
+      str_detect(Offer_location, regex("podkarpackie|Rzeszów", ignore_case = TRUE)) ~ "podkarpackie",
+      str_detect(Offer_location, regex("podlaskie|Białystok", ignore_case = TRUE)) ~ "podlaskie",
+      str_detect(Offer_location, regex("pomorskie|Gdańsk", ignore_case = TRUE)) ~ "pomorskie",
+      str_detect(Offer_location, regex("śląskie|Katowice", ignore_case = TRUE)) ~ "śląskie",
+      str_detect(Offer_location, regex("świętokrzyskie|Kielce", ignore_case = TRUE)) ~ "świętokrzyskie",
+      str_detect(Offer_location, regex("warmińsko-mazurskie|Olsztyn", ignore_case = TRUE)) ~ "warmińsko-mazurskie",
+      str_detect(Offer_location, regex("wielkopolskie|Poznań", ignore_case = TRUE)) ~ "wielkopolskie",
+      str_detect(Offer_location, regex("zachodniopomorskie|Szczecin", ignore_case = TRUE)) ~ "zachodniopomorskie",
+      TRUE ~ "Brak"
+    )
+  )
+```
+
+```{r ewentualne tłumaczenie kolumn na polski, echo=FALSE}
+dane_p_pl <- dane_p %>%
+  rename(
+    Indeks = Index,
+    Marka = Vehicle_brand,
+    Model = Vehicle_model,
+    Typ_pojazdu = Type,
+    Rok_produkcji = Production_year,
+    Przebieg_km = Mileage_km,
+    Pojemnosc_cm3 = Displacement_cm3,
+    Moc_KM = Power_HP,
+    Skrzynia_biegow = Transmission,
+    Naped = Drive,
+    Liczba_drzwi = Doors_number,
+    Rodzaj_paliwa = Fuel_type,
+    Kolor = Colour,
+    Stan = Condition,
+    Cena = Price,
+    Waluta = Currency,
+    Wyposazenie = Features,
+    Lokalizacja_oferty = Offer_location,
+    Data_publikacji_oferty = Offer_publication_date,
+    Pierwszy_wlasciciel = First_owner,
+    Wersja_pojazdu = Vehicle_version,
+    Generacja_pojazdu = Vehicle_generation,
+    Kraj_pochodzenia = Origin_country,
+    Data_pierwszej_rejestracji = First_registration_date,
+    Emisja_CO2 = CO2_emissions)
+
+dane_pl <- dane %>%
+  rename(
+    Indeks = Index,
+    Marka = Vehicle_brand,
+    Model = Vehicle_model,
+    Typ_pojazdu = Type,
+    Rok_produkcji = Production_year,
+    Przebieg_km = Mileage_km,
+    Pojemnosc_cm3 = Displacement_cm3,
+    Moc_KM = Power_HP,
+    Skrzynia_biegow = Transmission,
+    Naped = Drive,
+    Liczba_drzwi = Doors_number,
+    Rodzaj_paliwa = Fuel_type,
+    Kolor = Colour,
+    Stan = Condition,
+    Cena = Price,
+    Waluta = Currency,
+    Wyposazenie = Features,
+    Lokalizacja_oferty = Offer_location,
+    Data_publikacji_oferty = Offer_publication_date,
+    Pierwszy_wlasciciel = First_owner)
+```
+
+```{r tłumaczenie zmiennych, echo=FALSE}
+#Stan
+clean_string <- function(x) {
+  x <- trimws(x)  
+  x <- gsub("\u00A0", "", x)   
+  x <- gsub("[\r\n]", "", x)   
+  return(x)}
+
+dane_pl$Stan   <- clean_string(dane_pl$Stan)
+dane_p_pl$Stan <- clean_string(dane_p_pl$Stan)
+
+dane_pl$Stan <- case_when(
+  dane_pl$Stan %in% c("new", "New", "NEW")  ~ "nowy",
+  dane_pl$Stan %in% c("used", "Used", "USED") ~ "używany",
+  TRUE ~ dane_pl$Stan)
+
+dane_p_pl$Stan <- case_when(
+  dane_p_pl$Stan %in% c("new", "New", "NEW")  ~ "nowy",
+  dane_p_pl$Stan %in% c("used", "Used", "USED") ~ "używany",
+  TRUE ~ dane_p_pl$Stan)
+
+#Model
+dane_pl$Model[dane_pl$Model == "Other"] <- "Inne"
+dane_p_pl$Model[dane_p_pl$Model == "Other"] <- "Inne"
+
+#Rodzaj paliwa
+dane_pl$Rodzaj_paliwa <- recode(dane_pl$Rodzaj_paliwa,
+  "Gasoline" = "benzyna",
+  "Gasoline + LPG" = "benzyna + LPG",
+  "Gasoline + CNG" = "benzyna + CNG",
+  "Diesel" = "diesel",
+  "Electric" = "elektryczny",
+  "Hybrid" = "hybryda",
+  "Hydrogen" = "wodór",
+  "Ethanol" = "etanol")
+
+dane_p_pl$Rodzaj_paliwa <- recode(dane_p_pl$Rodzaj_paliwa,
+  "Gasoline" = "benzyna",
+  "Gasoline + LPG" = "benzyna + LPG",
+  "Gasoline + CNG" = "benzyna + CNG",
+  "Diesel" = "diesel",
+  "Electric" = "elektryczny",
+  "Hybrid" = "hybryda",
+  "Hydrogen" = "wodór",
+  "Ethanol" = "etanol")
+
+#Napęd
+dane_pl$Naped <- recode(dane_pl$Naped,
+  "Front wheels" = "napęd na przód",
+  "Rear wheels" = "napęd na tył",
+  "4x4 (attached automatically)" = "4x4 automatyczny",
+  "4x4 (permanent)" = "4x4 stały",
+  "4x4 (attached manually)" = "4x4 ręczny")
+
+dane_p_pl$Naped <- recode(dane_p_pl$Naped,
+  "Front wheels" = "napęd na przód",
+  "Rear wheels" = "napęd na tył",
+  "4x4 (attached automatically)" = "4x4 automatyczny",
+  "4x4 (permanent)" = "4x4 stały",
+  "4x4 (attached manually)" = "4x4 ręczny")
+
+#Skrzynia biegów
+dane_pl$Skrzynia_biegow <- recode(dane_pl$Skrzynia_biegow,
+  "Manual" = "manualna",
+  "Automatic" = "automatyczna")
+
+dane_p_pl$Skrzynia_biegow <- recode(dane_p_pl$Skrzynia_biegow,
+  "Manual" = "manualna",
+  "Automatic" = "automatyczna")
+
+#Typ pojazdu
+dane_pl$Typ_pojazdu <- recode(dane_pl$Typ_pojazdu,
+  "small_cars" = "małe",
+  "city_cars" = "miejskie",
+  "compact" = "kompaktowe",
+  "convertible" = "kabriolet",
+  "station_wagon" = "kombi")
+
+dane_p_pl$Typ_pojazdu <- recode(dane_p_pl$Typ_pojazdu,
+  "small_cars" = "małe",
+  "city_cars" = "miejskie",
+  "compact" = "kompaktowe",
+  "convertible" = "kabriolet",
+  "station_wagon" = "kombi")
+
+#Kolor
+dane_pl$Kolor <- recode(dane_pl$Kolor,
+  "gray" = "szary",
+  "silver" = "srebrny",
+  "blue" = "niebieski",
+  "black" = "czarny",
+  "white" = "biały",
+  "red" = "czerwony",
+  "yellow" = "żółty",
+  "green" = "zielony",
+  "burgundy" = "bordowy",
+  "golden" = "złoty",
+  "brown" = "brązowy",
+  "beige" = "beżowy",
+  "violet" = "fioletowy",
+  "other" = "inne")
+
+dane_p_pl$Kolor <- recode(dane_p_pl$Kolor,
+  "gray" = "szary",
+  "silver" = "srebrny",
+  "blue" = "niebieski",
+  "black" = "czarny",
+  "white" = "biały",
+  "red" = "czerwony",
+  "yellow" = "żółty",
+  "green" = "zielony",
+  "burgundy" = "bordowy",
+  "golden" = "złoty",
+  "brown" = "brązowy",
+  "beige" = "beżowy",
+  "violet" = "fioletowy",
+  "other" = "inne")
+
+#Kraj pochodzenia
+dane_p_pl$Kraj_pochodzenia <- recode(dane_p_pl$Kraj_pochodzenia,
+  "Germany" = "Niemcy",
+  "Poland" = "Polska",
+  "France" = "Francja",
+  "Switzerland" = "Szwajcaria",
+  "United States" = "USA",
+  "Austria" = "Austria",
+  "Canada" = "Kanada",
+  "Italy" = "Włochy",
+  "Belgium" = "Belgia",
+  "Netherlands" = "Holandia",
+  "Denmark" = "Dania",
+  "Sweden" = "Szwecja",
+  "Czech Republic" = "Czechy",
+  "Great Britain" = "Wielka Brytania",
+  "Other" = "Inne")
+
+#Pierwszy właściciel
+dane_pl$Pierwszy_wlasciciel <- ifelse(
+  is.na(dane_pl$Pierwszy_wlasciciel), 
+  "nie", 
+  dane_pl$Pierwszy_wlasciciel)
+
+dane_pl$Pierwszy_wlasciciel <- ifelse(dane_pl$Pierwszy_wlasciciel == "Yes", "tak", 
+                                       ifelse(dane_pl$Pierwszy_wlasciciel == "No", "nie",
+                                              dane_pl$Pierwszy_wlasciciel))
+
+dane_p_pl$Pierwszy_wlasciciel <- ifelse(
+  is.na(dane_p_pl$Pierwszy_wlasciciel), 
+  "nie", 
+  dane_p_pl$Pierwszy_wlasciciel)
+```
+
+# **Wstępna eksploracja badanego zbioru**
+
+## Analiza Jakości Danych
+
+```{r Braki danych, include=FALSE}
+pct_miss(dane_p$Vehicle_version)
+pct_miss(dane_p$CO2_emissions)
+pct_miss(dane_p$Drive)
+pct_miss(dane_p$Vehicle_brand)
+```
+
+### Braki danych
+
+```{r wizualizacja braków danych, echo=FALSE}
+gg_miss_var(dane_p_pl, show_pct = TRUE) +
+  # 1. Polskie opisy osi i tytuły
+  labs(
+    title = "Wykres braków danych",
+    subtitle = "Procentowy udział brakujących wartości dla zmiennych",
+    y = "Procent braków (%)", # To będzie na dole (oś pozioma)
+    x = "Zmienne"             # To będzie z lewej (oś pionowa)
+  ) +
+  
+  # 2. Formatowanie osi (dodanie znaku %)
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  
+  # 3. Stylistyka spójna z resztą pracy (Granatowe nagłówki)
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14, color = "navy"),
+    plot.subtitle = element_text(color = "navy"),
+    axis.text = element_text(color = "black"),
+    panel.grid.minor = element_blank() # Usunięcie drobnej siatki dla czytelności
+  ) 
+  # coord_flip() jest zazwyczaj wbudowany w domyślny widok gg_miss_var, 
+  # ale jeśli u Ciebie zmienne są na dole zamiast z boku, odkomentuj poniższą linię:
+  # + coord_flip()
+```
+
+Wykres przedstawia procentowy udział brakujących danych dla poszczególnych zmiennych. Największe braki występują w zmiennych Data_pierwszej_rejestracji oraz Emisja_CO2, gdzie odsetek braków przekracza 50%. Umiarkowane braki dotyczą m.in. Kraj_pochodzenia, Wersja_pojazdu i Generacja_pojazdu, natomiast większość pozostałych zmiennych jest niemal kompletna i zawiera jedynie śladowe ilości brakujących danych. Ze względu na bardzo wysoki poziom braków danych i brak możliwości uzupełnienia braków w zmiennych Wersja_pojazdu, Generacja_pojazdu, Kraj_pochodzenia, Data_pierwszej_rejestracji i Emisja_CO2 postanowiliśmy w dalszej części pracy nie brać pod uwage tych zmiennych. Zmienna Pierwszy_wlasciciel może zostać uzupełniona więc nie zostaje wykluczona.
+
+### Struktura braków danych
+
+```{r echo=FALSE}
+# Wybór zmiennych i rysowanie wykresu
+gg_miss_upset(
+  dane_p_pl %>% select(Naped, Pojemnosc_cm3, Liczba_drzwi, Przebieg_km, Moc_KM, Skrzynia_biegow),
+  nintersects = 15,
+  
+  # --- STYLIZACJA (Dopasowanie do reszty raportu) ---
+  main.bar.color = "navy",    # Kolor głównych słupków (Przecięcia)
+  sets.bar.color = "navy",    # Kolor bocznych słupków (Braki ogółem)
+  matrix.color = "navy",      # Kolor kropek i linii łączących
+  
+  # Zwiększenie czcionek dla czytelności (oś X, Y i liczby)
+  text.scale = c(1.3, 1.3, 1, 1, 1.3, 1.3),
+  
+  # Usunięcie szarego tła pod kropkami (czystszy wygląd)
+  shade.color = "white"
+)
+```
+
+Wykres przedstawia strukturę niekompletności danych. Braki w parametrach technicznych rzadko występują łącznie. Analiza wykazała dominację pojedynczego braku w zmiennej `Napęd`. Oznacza to, że sprzedający masowo pomijają informację o rodzaju napędu, wypełniając jednocześnie pozostałe pola. Współwystępowanie braków w wielu kolumnach naraz jest zjawiskiem marginalnym. Taka struktura sugeruje, że braki wynikają raczej ze specyfiki formularza ogłoszeniowego lub niewiedzy technicznej użytkowników odnośnie układu napędowego, a nie z ogólnej niskiej jakości ogłoszenia.
+
+```{r , echo=FALSE}
+dane1 <- hotdeck(dane)[1:31]
+dane1_pl <- hotdeck(dane_pl)[1:31]
+```
+
+## Opis zmian wprowadzonych do danych
+
+1.  Pierwotny zbiór danych zawierał wartości atrybutów kategorycznych w języku angielskim, co utrudniałoby interpretację wyników w kontekście polskiego rynku. Aby zapewnić czytelność wizualizacji i spójność raportu, przeprowadzono proces mapowania wartości i nazw zmiennych. Jako przykład tego procesu można podać rodzaj paliwa.
+
+```{r, echo = FALSE}
+# Kod generujący małą tabelkę porównawczą
+przyklad_przed_po <- data.frame(
+  Wartosc_Angielska = unique(dane_p$Fuel_type),
+  Wartosc_Polska = unique(dane_p_pl$Rodzaj_paliwa)
+)
+
+# Wyświetlenie ładnej tabelki w konsoli (do skopiowania)
+kable(przyklad_przed_po, col.names = c("Oryginał (EN)", "Po zmianie (PL)"), 
+      caption = "Przykład mapowania wartości zmiennych dla zmiennej Rodzaj_paliwa")
+```
+
+2.  Oryginalna zmienna zawierała surowy ciąg znaków. Zastosowano ekstrakcję tekstu, aby wyodrębnić z adresu nazwę województwa i utworzyć nową zmienną kategoryczną Wojewodztwo. Pozwoliło to na późniejszą analizę przestrzenną cen. Przykład tego procesu został przedstawiony poniżej
+
+```{r, echo = FALSE}
+# Kod generujący małą tabelkę porównawczą
+przyklad_przed_po <- data.frame(
+  Wartosc_Angielska = dane1_pl$Lokalizacja_oferty[1],
+  Wartosc_Polska = dane1_pl$wojewodztwo[1]
+)
+
+# Wyświetlenie ładnej tabelki w konsoli (do skopiowania)
+kable(przyklad_przed_po, col.names = c("Oryginał (EN)", "Po zmianie (PL)"), 
+      caption = "Przykład wyodrębnienia województwa z pierwotnej zmiennej adresu")
+```
+
+3.  Oryginalna zmienna ceny mogła być podawana w walucie zarówno PLN jak i EUR co prowadziło by do niewłaściwych wniosków. W celu unifikacji wprowadzono zmienną Cena_PLN, w której ceny w walucie EUR zostały przekonwertowane na PLN po kursie z najnowszego dnia umieszczenia ogłoszenia na platformę (1/05/2021).
+
+4.  Zmienną Pierwszy_wlasciciel potraktowano jako zmienną typu prawda/fałsz, gdzie prawda oznacza, że sprzedający jest pierwszym właścicielem samochodu. Wartości brakujące zmiennej zmieniono na wartość fałsz.
+
+5.  Dla zmiennych o niskim odsetku braków (\<7%) zastosowano imputację metodą hot-deck lub usunięcie niekompletnych rekordów.
+
+## Walidacja danych
+
+Aby nie dopuścić do uwzględnienia wartości odstających w analizie przeprowadzono proces walidacji danch według reguł wymienionyż poniżej. Walidacja występuje kilkukrotnie i za każdym razem jest popszedzona imputacją.
+
+### **Reguły:**
+
+-   Czy cena jest większa niż 2 000 PLN i niższa niż 2 000 000 PLN
+
+<!-- -->
+
+-   Czy rok jest mniejszy niż 2025 i większy niż 1900?
+
+-   Czy przebieg jest mniejszy niż 400 000 km?
+
+-   Czy występuje mniej niż 7 drzwi i więcej niż 1?
+
+-   Czy moc jest mniejsza niż 800 hp i większa niż 10 hp?
+
+-   Czy nowe auta mają przebieg mniejszy niż 10 km?
+
+```{r, include=FALSE}
+reguły <- validator(
+  Rok_produkcji < 2025 & Rok_produkcji > 1900,
+  Przebieg_km < 400000,
+  Liczba_drzwi < 7 & Liczba_drzwi > 1,
+  Moc_KM < 800 & Moc_KM > 10,
+  !(Stan == "nowy" & Przebieg_km > 10),
+  !(Stan == "używany" & Przebieg_km < 10),
+  Cena_PLN > 1000 & Cena_PLN < 2000000 )
+
+```
+
+```{r Reguły, include= FALSE}
+
+cf <- confront(dane1_pl, reguły, key ="Indeks")
+summary(cf)
+dane2_pl <- replace_errors(dane1_pl, reguły)
+cf <- confront(dane2_pl, reguły, key ="Indeks")
+summary(cf)
+dane2_pl <- hotdeck(dane2_pl)[1:31]
+cf <- confront(dane2_pl, reguły, key ="Indeks")
+summary(cf)
+dane2_pl <- replace_errors(dane2_pl, reguły)
+dane2_pl <- na.omit(dane2_pl)
+```
+
+```{r , echo=FALSE}
+cf <- confront(dane2_pl, reguły, key ="Indeks")
+summary(cf)
+barplot(cf, main="Dane")
+```
+
+Wykres przedstawia podsumowanie konfrontacji danych z zestawem reguł walidacyjnych. Każdy pasek odpowiada jednej regule i pokazuje liczbę obserwacji spełniających regułę (passes), naruszających ją (fails) oraz przypadki z brakującymi danymi (nNA). Dominacja zielonych segmentów wskazuje, że wszystkie rekordy spełniają zdefiniowane warunki jakości danych.
+
+# **Wstępna charakterystyka rynku**
+
+## **Statystyki Opisowe**
+
+```{r Statystyki opisowe, echo=FALSE}
+# Prostsze podejście bez qwraps2
+statystyki <- dane2_pl %>%
+  filter(!is.na(Cena_PLN), !is.na(Stan)) %>%
+  group_by(Stan) %>%
+  summarise( Min = min(Cena_PLN),
+             Max = max(Cena_PLN),
+             `Kwartyl dolny` = quantile(Cena_PLN, 0.25),
+             Mediana = round(median(Cena_PLN), 2),
+             `Kwartyl górny` = quantile(Cena_PLN, 0.75),
+             Średnia = round(mean(Cena_PLN), 2),
+             `Odch. std.` = round(sd(Cena_PLN), 2),
+             IQR = round(IQR(Cena_PLN), 2),
+             `Odchylenie ćwiartkowe` = round(IQR(Cena_PLN)/2, 2),
+             `Odch. std. w %` = round((sd(Cena_PLN)/mean(Cena_PLN)) * 100, 2),
+             `Odch. ćwiartkowe w %` = round((IQR(Cena_PLN)/median(Cena_PLN)) * 100, 2),
+             Skośność = round(e1071::skewness(Cena_PLN), 2),
+             Kurtoza = round(e1071::kurtosis(Cena_PLN), 2),
+  .groups = 'drop' ) %>%
+  tidyr::pivot_longer(-Stan, names_to = "Statystyka", values_to = "Wartość")   %>%
+  tidyr::pivot_wider(names_from = Stan, values_from = Wartość)
+kableExtra::kable(statystyki, digits = 2, align = "lcc", caption = "Tabela 1. Ceny wg stanu użycia.") 
+```
+
+Tabela przedstawia statystykę opisową cen dla nowych i używanych samochodów. Mediana dla aut nowych jest ponad 4-krotnie wyższa niż dla używanych. Występuje silna dodatnia skośność, szczególnie w autach używanych (6.31), co pokazuje, że większość rynku to auta tanie, a średnią cenę zawyża\
+nieliczna grupa bardzo drogich pojazdów. Wysoka kurtoza dla aut używanych (74.43) potwierdza obecność unikatowych aut sportowych lub kolekcjonerskich, których ceny bardzo silnie odbiegają\
+od średniej.
+
+## Treemap ilości samochodów po markach i modelach
+
+```{r Treemap Marki i modele, echo=FALSE}
+# druga wersja w plotly (do wyboru którą bierzemy, raczej bym tą wolał)
+
+
+# Przygotuj dane (jak wcześniej)
+df_summary_pl <- dane2_pl %>%
+  count(Marka, Model, name = "count") 
+
+df_limited_pl <- df_summary_pl %>% group_by(Marka) %>% mutate(brand_total = sum(count)) %>% ungroup() %>% filter(Marka %in% { df_summary_pl %>% group_by(Marka) %>% summarise(total = sum(count), .groups = 'drop') %>% arrange(desc(total)) %>% head(20) %>% pull(Marka) }) %>% group_by(Marka) %>% arrange(desc(count)) %>% slice_head(n = 20) %>% ungroup() %>% select(-brand_total)
+# Dodaj root (bez marek jako osobnych elementów w hierarchii)
+root_pl <- tibble( Model = "Wszystkie", Marka = "", count = sum(df_limited_pl$count) )
+# Dodaj marki jako pośredni poziom
+brands_pl <- df_limited_pl %>% group_by(Marka) %>% summarise(count = sum(count), .groups = 'drop') %>% mutate( Model = Marka, Marka = "Wszystkie" )
+# Modele z markami jako parentami
+models_pl <- df_limited_pl %>% select(Model, Marka, count)
+# Połącz wszystko
+df_treemap <- bind_rows(root_pl, brands_pl, models_pl)
+# Wykres
+plot_ly( data = df_treemap, type = "treemap", labels = ~Model, parents = ~Marka, values = ~count, textposition = "middle center", textfont = list(size = 13, color = "white", family = "Arial", weight = "bold"), marker = list( line = list(color = "white", width = 1) ), branchvalues = "total",
+# KLUCZOWE: marki są sumą modeli
+pathbar = list(visible = TRUE), hovertemplate = "<b>%{label}</b><br>Liczba: %{value:,}<br>Udział: %{percentParent:.2%}<extra></extra>", tiling = list(packing = "squarify", pad = 3) ) %>% layout( title = list( text = "Mapa drzewa rozkładu marek i modeli pojazdów", font = list(size = 20, family = "Arial") ), margin = list(t = 50, l = 0, r = 0, b = 0), paper_bgcolor = "#f8f9fa", plot_bgcolor = "#f8f9fa" ) 
+```
+
+Mapa drzewa pokazuje hierarchiczną strukturę rynku ogłoszeń. Wielkość każdego prostokąta odpowiada liczbie ofert danej marki, a mniejsze podziały wewnątrz reprezentują popularność konkretnych modeli. Wyraźnie widać, że dominują marki niemieckie: Volkswagen, BMW, Audi, Opel oraz amerykański Ford. Największe pojedyncze bloki wewnątrz marek to modele: Volkswagen Golf i Passat, Opel Astra, Audi A4 oraz Ford Focus. Modele te mogą wyznaczać punkty odniesienia dla średniej ceny rynkowej. Występuje też duży udział segmentu Premium takich jak: BMW , Audi i Mercedes-Benz, co będzie miało wpływ na rozkład cen. Mapa ta pokazuje, że model wyceny powinien uwzględniać markę jako istotny czynnik wpływający na cenę pojazdu. Przykładowo, cena BMW serii 3 będzie kształtować się inaczej niż cena Kia Ceed z tego samego rocznika, co wynika z różnic w postrzeganej wartości marki oraz segmentu rynku.
+
+## Analiza używanych rodzajów paliwa
+
+```{r rodzaje paliwa - waffle chart, echo=FALSE}
+
+
+# Przygotowanie danych
+fuel_counts_pl <- table(dane2_pl$Rodzaj_paliwa)
+fuel_percent_pl <- round(100 * fuel_counts_pl / sum(fuel_counts_pl), 1)
+
+# KLUCZOWE: Skalowanie do DOKŁADNIE 100 kwadratów
+total_squares <- 100
+fuel_scaled <- round(fuel_percent_pl)
+
+# Korekta aby suma była DOKŁADNIE 100
+diff <- sum(fuel_scaled) - total_squares
+
+if (diff != 0) {
+  # Znajdź kategorię z największym błędem zaokrąglenia
+  errors <- (fuel_percent_pl - fuel_scaled)
+  if (diff > 0) {
+    # Mamy za dużo - odejmij od kategorii z największym dodatnim błędem
+    idx <- which.max(errors)
+    fuel_scaled[idx] <- fuel_scaled[idx] - diff
+  } else {
+    # Mamy za mało - dodaj do kategorii z największym ujemnym błędem
+    idx <- which.min(errors)
+    fuel_scaled[idx] <- fuel_scaled[idx] - diff
+  }
+}
+
+# Tworzenie danych dla waffle chart
+waffle_data <- data.frame(
+  Rodzaj_paliwa = rep(names(fuel_counts_pl), fuel_scaled)
+) %>%
+  mutate(
+    id = row_number(),
+    x = (id - 1) %% 10,
+    y = -((id - 1) %/% 10),
+    Fuel_label = paste0(Rodzaj_paliwa, " (", fuel_percent_pl[Rodzaj_paliwa], "%)")
+  )
+
+# Waffle chart
+ggplot(waffle_data, aes(x = x, y = y, fill = Fuel_label)) +
+  geom_tile(color = "white", linewidth = 1.5) +
+  scale_fill_manual(values = paleta_pg) +
+  labs(
+    title = "                                Wykres Waffle rodzajów paliwa w samochodach oferowanych na sprzedaż",
+    fill = "Rodzaj paliwa",
+    caption = "Każdy kwadrat = 1% obserwacji"
+  ) +
+  theme_void() +
+  theme(
+    text = element_text(family = "Arial", color = "#333333"),
+    plot.title = element_text(
+      hjust = 0.5, 
+      size = 13, 
+      face = "bold", 
+      color = "#010467"  # Granatowy jak w theme_pg
+    ),
+    legend.title = element_text(
+      face = "bold", 
+      size = 11, 
+      color = "#010467"  # Granatowy jak axis.title
+    ),
+    legend.text = element_text(
+      size = 10, 
+      color = "#333333"  # Standardowy kolor tekstu
+    ),
+    legend.position = "right",
+    plot.caption = element_text(
+      hjust = 0.5, 
+      size = 9, 
+      color = "#333333"  # Zmienione z gray40 na standardowy
+    )
+  ) +
+  coord_equal()
+```
+
+Powyższy wykres udziału ilustruje procentowy udział poszczególnych rodzajów paliwa w analizowanym zbiorze ogłoszeń, gdzie każdy kwadrat reprezentuje 1% obserwacji. Jednostki benzynowe oraz diesel stanowią łącznie ponad 92% wszystkich ofert, tworząc zbliżony rozkład udziałów rynkowych. Alternatywne źródła paliwa pozostają w wyraźnej mniejszości. Są to samochody z instalacją LPG, hybrydy oraz pojazdy elektryczne. Silna dysproporcja sugeruje, że paliwa alternatywne mogą pełnić rolę istotnych predyktorów wyższych cen, podczas gdy obecność instalacji LPG może być powiązana z segmentem budżetowym.
+
+## Typy samochodów a skrzynia biegów
+
+```{r Słupkowy Stack, echo=FALSE}
+dane_summary <- dane2_pl %>%
+  count(Typ_pojazdu, Skrzynia_biegow) %>%
+  group_by(Typ_pojazdu) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(Type = factor(Typ_pojazdu, levels = names(sort(tapply(n, Typ_pojazdu, sum), decreasing = TRUE))))
+
+# Wybierz 2 niebieskie kolory z palety (indeksy 3 i 4 to BADEFF i 38BDF8)
+kolory_transmission <- c(paleta_pg[4], paleta_pg[1])
+
+ggplot(dane_summary, aes(x = Type, y = n, fill = Skrzynia_biegow)) +
+  geom_col(position = "stack", alpha = 0.7) +
+  scale_fill_manual(values = kolory_transmission) +
+  labs(
+    title = "Skumulowany wykres słupkowy rozkładu typów samochodów w zależności\nod rodzaju skrzyni biegów",
+    x = "Rodzaj",
+    y = "Ilość",
+    fill = "Skrzynia biegów") +
+  theme(
+    axis.text.x = element_text(angle = 20, vjust = 1, hjust = 1),
+    plot.title = element_text(hjust = 0.5, size = 12)
+  )
+```
+
+Analiza struktury typów samochodów w kontekście zastosowanej skrzyni biegów wskazuje, że największy udział na rynku zajmują SUV, kombi, sedan i kompaktowe, co wyraźnie pokazuje popularność samochodów nadających się do różnych zadań. Istnieje wyraźny wzór: w kategoriach SUV, sedan i coupe automatyczne skrzynie biegów są dość powszechne. Sugeruje to, że takie samochody mogą być często pozycjonowane jako droższe i koncentrować się na maksymalnym komforcie kierowcy. Natomiast w segmentach samochodów miejskich, kompaktowych i małych wyraźnie preferowane są przekładnie mechaniczne. Typ skrzyni biegów może być jednym z najbardziej wpływowych czynników decydujących o cenie, nawet w większym stopniu niż typ nadwozia. W szczególności obecność automatycznej skrzyni biegów często wskazuje, że samochód jest z segmentu Premium lub jest bardziej zaawansowany technologicznie.
+
+## Rozkład przebiegów samochodów używanych
+
+```{r Wykres 3 histogram rozkład piebiegów samochodów używanych, echo=FALSE}
+# 1. Najpierw policzmy statystyki, żeby narysować linie
+statystyki_przebieg <- dane2_pl %>%
+  filter(Stan == "używany", Przebieg_km <= 400000) %>%
+  summarise(
+    srednia = mean(Przebieg_km, na.rm = TRUE),
+    mediana = median(Przebieg_km, na.rm = TRUE)
+  )
+
+# 2. Rysujemy wykres
+dane2_pl %>% 
+  filter(Przebieg_km <= 400000 & Stan == "używany") %>% 
+  ggplot(aes(x = Przebieg_km)) +
+  
+  # Słupki w kolorze PG Granat (#010467)
+  geom_histogram(bins = 40, fill = "#38BDF8", color = "white", alpha = 0.9) +
+  
+  # Linia Mediany (Czerwona przerywana)
+  geom_vline(aes(xintercept = statystyki_przebieg$mediana), 
+             color = "#ff0f0f", linetype = "dashed", size = 1) +
+  
+  # Linia Średniej (Jasnoniebieska lub Czerwona ciągła - tu damy jasny dla kontrastu)
+  geom_vline(aes(xintercept = statystyki_przebieg$srednia), 
+             color = "#010467", linetype = "solid", size = 1) +
+  
+
+  scale_x_continuous(
+    limits = c(0, 400000),
+    labels = scales::label_number(scale = 0.001, suffix = "k") # Skracamy do "200k" zamiast "200 000"
+  ) +
+  
+  labs(
+    title = "Histogram rozkładu przebiegu samochodów używanych",
+    subtitle = "Z zaznaczoną medianą (czerwona linia) i średnią (ciemna linia)",
+    x = "Przebieg (km)",
+    y = "Liczba ofert",
+    caption = "Wykres ograniczony do 400 tys. km dla czytelności rozkładu."
+  ) +
+    
+  theme_pg() +
+  theme(plot.caption = element_text(hjust = 0.5))
+```
+
+Histogram przedstawia rozkład przebiegu dla samochodów używanych oferowanych na sprzedaż. Oś X prezentuje przebieg w zakresie od 0 do 400 000 km, natomiast oś Y wskazuje liczbę ofert w danym przedziale. Większość wystawionych pojazdów posiada przebieg w szerokim przedziale od 100 000 do 200 000 km. Po punkcie szczytowym (200 000 km) liczba ofert gwałtownie spada, co sugeruje mniejszą atrakcyjność rynkową pojazdów o wyższej wartości przebiegu.
+
+# **Analiza przestrzenna i struktura cenowa**
+
+## Rozkład ceny samochodów nowych i używanych
+
+```{r Wykres 1 histogram ceny samochodów, echo=FALSE, warning=FALSE}
+
+ggplot(dane2_pl, aes(x = Cena_PLN, fill = Stan, color = Stan)) + # Upewnij się, że kolumna to Cena_PLN
+  
+  # 1. Histogram i Gęstość
+  geom_histogram(
+    aes(y = after_stat(density)),
+    bins = 60,
+    alpha = 0.4,
+    position = "identity",
+    size = 0
+  ) +
+  geom_density(
+    alpha = 0.2,
+    size = 1,
+    adjust = 1.5
+  ) +
+  
+  # 2. Skale i Kolory
+  scale_x_log10(
+    labels = scales::label_number(suffix = " zł", big.mark = " "),
+    breaks = c(1000, 5000, 20000, 50000, 150000, 500000)
+  ) +
+  
+  # Jeśli masz zdefiniowaną paleta_pg:
+  scale_fill_manual(values = c("używany" = paleta_pg[1], "nowy" = paleta_pg[2])) +
+  scale_color_manual(values = c("używany" = paleta_pg[1], "nowy" = paleta_pg[2])) +
+  
+  # 3. Opisy (Poprawiłem literówkę "nowyż" -> "nowych")
+  labs(
+    title = "Wykres gęstości cen samochodów nowych i używanych",
+    subtitle = "Porównanie gęstości cen samochodów nowych i używanych (skala log)",
+    x = "Cena (PLN)",
+    y = "Gęstość rozkładu (Density)",
+    caption = "Wykres znormalizowany: pozwala porównać strukturę cen niezależnie od liczby ofert w grupie.",
+    fill = "Stan",   # Legenda
+    color = "Stan"
+  ) +
+  
+  # 4. Stylizacja (Kolejność jest ważna: najpierw theme_pg, potem poprawki)
+  theme_pg() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom", # Legenda na dole wygląda zazwyczaj lepiej przy szerokich wykresach
+    plot.subtitle = element_text(color = "#0939FA"), # Granatowy podtytuł
+    plot.caption = element_text(hjust = 0.5, color = "gray50")
+  )
+```
+
+Powyższy wykres przedstawia rozkład cen samochodów oferowanych na sprzedaż, z podziałem na pojazdy nowe oraz używane. Ze względu na dużą rozpiętność cenową, na osi X zastosowano skalę logarytmiczną, co umożliwia czytelne porównanie obu grup. W przypadku samochodów używanych rozkład cen charakteryzuje się wyraźnym lewostronnym ogonem, obejmującym najtańsze pojazdy (poniżej 5 000 zł), oraz najwyższą gęstością ofert w przedziale 10 000–50 000 zł. Z kolei rozkład cen samochodów nowych jest wyraźnie przesunięty w prawo, koncentrując się głównie powyżej poziomu 100 000 zł. Istotnym elementem analizy jest zauważalne częściowe nakładanie się obu rozkładów, które przedstawia prawdziwy dylemat konsumenta stojącego przed wyborem pomiędzy zakupem nowego a używanego pojazdu. Jednocześnie wyraźne rozdzielenie charakterystyk cenowych obu grup potwierdza, że stan pojazdu jest kluczowym czynnikiem wpływającym na jego wartość rynkową.
+
+## Mapa Cenowa Polski według województw
+
+```{r wykres x mapa cen i liczby ogłoszeń, echo=FALSE, warning=FALSE}
+ 
+# Pobieramy kontury województw z pakietu 
+
+ polska_mapa <- gisco_get_nuts(
+   country = "Poland",
+   nuts_level = 2,
+   resolution = "10"
+ )
+ 
+polska_mapa_1 <- polska_mapa %>% mutate(nazwa_ujednolicona = case_when( str_detect(NAME_LATN, "Mazowiecki|Warszawski") ~ "Mazowieckie", TRUE ~ NAME_LATN )) %>% group_by(nazwa_ujednolicona) %>% summarise(geometry = st_union(geometry)) %>% ungroup() 
+# 1. Agregujemy Twoje dane (zakładam, że masz już kolumnę Cena_PLN) 
+
+dane_wojewodztwa <- dane2_pl %>% group_by(wojewodztwo) %>% summarise( Srednia_Cena = mean(Cena_PLN, na.rm = TRUE), Liczba_Ogloszen = n() ) %>% mutate(wojewodztwo = str_to_lower(wojewodztwo)) 
+
+# Wszystko na małe litery 
+
+# 2. Przygotowujemy mapę do łączenia 
+
+polska_mapa_clean <- polska_mapa_1 %>% mutate(join_col = str_to_lower(nazwa_ujednolicona)) 
+
+# Tworzymy kolumnę do łączenia 
+
+# 3. Łączymy 
+
+mapa_final <- polska_mapa_clean %>% left_join(dane_wojewodztwa, by = c("join_col" = "wojewodztwo")) 
+
+# SZYBKI TEST: Sprawdź, czy nie ma NA w Srednia_Cena # Jeśli są NA, to znaczy, że np. w danych masz "Woj. Mazowieckie" a w mapie "Mazowieckie" 
+
+ 
+# 1. Uproszczenie mapy (żeby przeglądarka nie "płakała" przy renderowaniu) 
+
+mapa_interactive <- ms_simplify(mapa_final, keep = 0.05) 
+
+# 2. Przygotowanie palety kolorów # Używamy "YlOrRd" (Yellow-Orange-Red) - klasyka dla cen 
+
+pal <- colorNumeric( palette = "YlOrRd", domain = mapa_interactive$Srednia_Cena ) 
+
+# 3. Tworzymy elegancki dymek (Popup) z formatowaniem # format(..., big.mark=" ") doda spacje w cenach (np. 50 000 zamiast 50000 
+
+labels <- sprintf( "<strong>Województwo: %s</strong><br/> Średnia cena: <span style='color:red;'>%s PLN</span><br/> Liczba ogłoszeń: %g", str_to_title(mapa_interactive$nazwa_ujednolicona), format(round(mapa_interactive$Srednia_Cena, 0), big.mark = " "), mapa_interactive$Liczba_Ogloszen ) 
+# 4. Budujemy mapę
+leaflet(mapa_interactive) %>% addProviderTiles(providers$CartoDB.Positron) %>% 
+
+# Jasne, nowoczesne tło 
+
+setView( lng = 19.145, lat = 51.919, zoom = 6) %>% 
+
+# Centrowanie na Polskę 
+
+addPolygons( fillColor = ~pal(Srednia_Cena), weight = 2, opacity = 1, color = "white", dashArray = "3", fillOpacity = 0.7, highlightOptions = highlightOptions( weight = 5, color = "#666", dashArray = "", fillOpacity = 0.7, bringToFront = TRUE), label = lapply(labels, htmltools::HTML), 
+             # KLUCZOWA ZMIANA TUTAJ
+labelOptions = labelOptions( style = list("font-weight" = "normal", padding = "3px 8px"), textsize = "13px", direction = "auto")) %>%  addLegend( pal = pal, values = ~Srednia_Cena, opacity = 0.7, title = "Średnia Cena", position = "bottomright", labFormat = labelFormat(suffix = " zł", big.mark = " ") ) 
+```
+
+Mapa kartogramiczna Polski, oparta na podziale terytorialnym zbliżonym do granic województw, przedstawiona na podkładzie OpenStreetMap, przedstawia zróżnicowanie średnich cen samochodów oferowanych na sprzedaż w poszczególnych regionach kraju. Analiza wyraźnie wskazuje na różnice regionalne. Może to odzwierciedlać odmienne poziomy zamożności, strukturę rynku oraz preferencje konsumentów w poszczególnych województwach. Najwyższe średnie ceny zanotowano w województwie wielkopolskim, zachodniopomorskim oraz mazowieckim, a najniższe na Lubelszczyźnie i w województwie świętokrzyskim. Przy czym należy również nadmienić, iż w jednocześnie województwa wielkopolskie i świętokrzyskie mają najmniejszą liczbę zanotowanych ofert, co prawdopodobnie wpływa na poziom średn
+
+# **Determinanty wartości pojazdu – analiza czynnikowa**
+
+## Korelacja zmiennych ilościowych
+
+```{r Heatmapa korelacji zmiennych ilościowych, echo=FALSE}
+zmienne_ilosc <- dane2_pl[, c("Cena_PLN", "Rok_produkcji", "Przebieg_km", "Moc_KM")]
+
+macierz_korelacji <- cor(zmienne_ilosc, use = "complete.obs")
+corrplot( macierz_korelacji, method = "color", type = "upper", addCoef.col = "black", tl.col = "black", tl.srt = 45, title = "Heatmapa korelacji zmiennych ilościowych", mar = c(0, 0, 2, 0) ) 
+```
+
+Macierz korelacji przedstawia zależności pomiędzy zmiennymi ilościowymi w analizowanym zbiorze danych (współczynnik Pearsona). Najsilniejsza dodatnia korelacja z ceną dotyczy mocy silnika (0,62), co wskazuje, że liczba koni mechanicznych może w większym stopniu determinować wartość pojazdu niż rok produkcji (0,43).
+
+## Korelacja zmiennych jakościowych
+
+```{r macierz korelacji danych jakościowych, echo=FALSE}
+# 1. WYBÓR ZMIENNYCH I DYSKRETYZACJA CENY
+# Wybieramy tylko zmienne tekstowe/kategoryczne + Cenę
+df_cat <- dane2_pl %>%
+  select(Marka, Rodzaj_paliwa, Skrzynia_biegow, Naped, Typ_pojazdu, Kolor) %>% 
+  mutate(
+    Segment_Cenowy = cut(dane2_pl$Cena_PLN, 
+                         breaks = quantile(dane2_pl$Cena_PLN, probs = 0:4/4, na.rm = TRUE),
+                         labels = c("Tanie", "Średnie", "Drogie", "Premium"),
+                         include.lowest = TRUE)
+  ) %>%
+  na.omit()
+
+# 2. FUNKCJA DO OBLICZANIA V-CRAMERA
+calc_cramer <- function(v1, v2) {
+  # Tworzymy tabelę krzyżową
+  tbl <- table(v1, v2)
+  # Test Chi-Kwadrat
+  chi2 <- chisq.test(tbl, correct = FALSE)$statistic
+  # Obliczenie V
+  n <- sum(tbl)
+  k <- min(dim(tbl)) - 1
+  return(as.numeric(sqrt(chi2 / (n * k))))
+}
+
+# 3. GENEROWANIE MACIERZY KORELACJI
+cols <- colnames(df_cat)
+n <- length(cols)
+cramer_matrix <- matrix(nrow = n, ncol = n)
+rownames(cramer_matrix) <- cols
+colnames(cramer_matrix) <- cols
+
+for (i in 1:n) {
+  for (j in 1:n) {
+    # Liczymy V dla każdej pary
+    cramer_matrix[i, j] <- calc_cramer(df_cat[[i]], df_cat[[j]])
+  }
+}
+
+# 4. PRZYGOTOWANIE POD WYKRES (Tidy format)
+melted_cramer <- melt(cramer_matrix)
+
+# 5. RYSOWANIE HEATMAPY W STYLU PG
+ggplot(melted_cramer, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  
+  # Wyświetlamy wartości liczbowe
+  geom_text(aes(label = round(value, 2)), color = ifelse(melted_cramer$value > 0.5, "white", "black"), size = 4) +
+  
+  # Skala kolorów PG (od Białego do Granatu)
+  scale_fill_gradient(low = "#E2E8F0", high = "#010467", limits = c(0, 1), name = "V-Craméra") +
+  
+  labs(
+    title = "Heatmapa korelacji zmiennych jakościowych",
+    subtitle = "Macierz V-Craméra (włączając skategoryzowaną Cenę)",
+    x = "", y = ""
+  ) +
+  theme_pg() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1), 
+    panel.grid = element_blank() 
+  )
+```
+
+Macierz V-Craméra przedstawia siłę powiązań pomiędzy zmiennymi kategorycznymi w zbiorze danych, w tym skategoryzowaną zmienną Cena. Wartości wskaźnika V-Craméra mieszczą się w przedziale od 0 do 1, gdzie 0 oznacza brak zależności, a 1 pełną zależność. Najsilniejsza zależność występuje pomiędzy zmiennymi Skrzynia_biegow oraz Segment_Cenowy. Ponadto zauważalne są umiarkowane powiązania między Typem_pojazdu a Segmentem_Cenowym oraz marką a ceną. Silne powiązanie widoczne jest również pomiędzy Marką a Skrzynią biegów. Relacja ta wskazuje na współzależność pomiędzy cechami technicznymi i producentem samochodu, które niekoniecznie przekładają się bezpośrednio na segment cenowy. Analiza wskazuje na to, że marka samochodu oraz jego cechy techniczne mają istotny wpływ na przynależność do danego segmentu cenowego. Z kolei zmienne takie jak kolor czy rodzaj paliwa wykazują słabsze powiązania z ceną i innymi zmiennymi.
+
+## Analiza spadku cen wybranych marek samochodów
+
+```{r wykres spadku ceny wybranych marek, echo=FALSE}
+wybrane_marki <- c("Porsche", "Audi", "Volkswagen", "Toyota", "Opel", "Kia")
+
+# 0. Ustalenie aktualnego roku na podstawie danych (najnowsze auto w bazie)
+rok_biezacy <- max(dane2_pl$Rok_produkcji, na.rm = TRUE)
+
+# 1. Przygotowanie danych i obliczenie wieku
+dane_deprecjacja <- dane2_pl %>%
+  mutate(Wiek = rok_biezacy - Rok_produkcji) %>%
+  filter(Marka %in% wybrane_marki) %>%
+  filter(Wiek >= 0, Wiek <= 20) %>%  # Bierzemy też nówki (Wiek 0)
+  filter(Cena_PLN > 1000)
+
+# 2. AGREGACJA: Liczymy średnią cenę dla każdego wieku i marki
+# To kluczowy krok - zamiast chmury punktów, mamy jedną średnią na rok.
+trendy_cenowe <- dane_deprecjacja %>%
+  group_by(Marka, Wiek) %>%
+  summarise(Srednia_Cena = mean(Cena_PLN, na.rm = TRUE), .groups = "drop")
+
+# 3. Wyciągnięcie ceny bazowej (Wiek 0 - czyli auto nowe)
+ceny_bazowe <- trendy_cenowe %>%
+  filter(Wiek == 0) %>%
+  rename(Cena_Startowa = Srednia_Cena) %>%
+  select(Marka, Cena_Startowa)
+
+# 4. Łączymy i liczymy % spadku
+wykres_data <- trendy_cenowe %>%
+  inner_join(ceny_bazowe, by = "Marka") %>%
+  mutate(Procent_Wartosci = Srednia_Cena / Cena_Startowa)
+
+# 5. Rysujemy
+ggplot(wykres_data, aes(x = Wiek, y = Procent_Wartosci, color = Marka)) +
+  
+  # Linie trendu (Teraz łączymy średnie, więc wykres jest "uczciwy")
+  geom_line(size = 1.2, alpha = 0.9) + 
+  
+  # Linia odniesienia 50%
+  geom_hline(yintercept = 0.5, linetype = "dashed", color = "#555555") +
+  annotate("text", x = 15, y = 0.53, label = "Granica 50% wartości", 
+           color = "#555555", size = 3.5, fontface = "italic") +
+  
+  # Skale i osie
+  scale_y_continuous(
+    labels = scales::percent_format(accuracy = 1), 
+    limits = c(0, 1.05), # Zaczynamy od 0, kończymy tuż nad 100%
+    expand = c(0, 0)     # Usuwa pustą przestrzeń pod osią X
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 20, 2), # Podziałka co 2 lata
+    expand = c(0.01, 0)
+  ) +
+  
+  # Twoja paleta (Idealnie 6 kolorów dla 6 marek)
+  scale_color_manual(values = paleta_pg) +
+  
+  labs(
+    title = "Krzywa deprecjacji cen aut wybranych marek?",
+    subtitle = "Spadek wartości względem ceny samochodu nowego (Wiek 0 = 100%)",
+    x = "Wiek auta (lata)",
+    y = "% Wartości początkowej",
+    color = "Marka",
+    caption = "Analiza oparta na średnich cenach ofertowych dla poszczególnych roczników."
+  ) +
+  
+  theme_pg() +
+  theme(
+    legend.position = "right",
+    plot.margin = margin(10, 20, 10, 10) # Drobna korekta marginesów
+  )
+```
+
+Wykres prezentuje krzywe deprecjacji dla wybranych marek, obrazując procentowy spadek wartości pojazdu względem ceny salonowej (100%) w funkcji wieku. Ogólny trend dla wszystkich marek ma charakter wykładniczy - najgwałtowniejsza utrata wartości następuje w pierwszych 3-4 latach eksploatacji. Szczególnym przypadkiem jest Porsche. Marka ta wykazuje wysoką zmienność – po bardzo gwałtownym spadku w pierwszych dwóch latach, krzywa ulega wypłaszczeniu. W perspektywie długoterminowej Porsche jako jedyne wyłamuje się z ogólnego trendu, utrzymując wartość wyraźnie powyżej progu 10-15%, do którego zbiegają pozostałe marki. Może to świadczyć o wkraczaniu starszych modeli tej marki w status aut kolekcjonerskich.
+
+## Najpopularniejsze dodatki w samochodach
+
+```{r wykres najpopularniejszych dodatków, echo=FALSE}
+
+# 1. Czyszczenie i rozbijanie kolumny Wyposazenie
+df_features <- dane2_pl %>%
+  select(Indeks, Wyposazenie) %>%
+  mutate(
+    Features_Clean = str_remove_all(Wyposazenie, "\\[|'|\\]")
+  ) %>%
+  separate_rows(Features_Clean, sep = ",\\s*") %>%
+  filter(Features_Clean != "")
+
+# 2. Ranking najpopularniejszych dodatków (top 10)
+top_features <- df_features %>%
+  count(Features_Clean, sort = TRUE) %>%
+  head(10)
+
+# 3. Słownik tłumaczeń EN -> PL
+feature_labels_pl <- c(
+  "ABS" = "ABS",
+  "Central locking" = "Centralny zamek",
+  "Electric front windows" = "Elektryczne szyby przednie",
+  "Drivers airbag" = "Poduszka powietrzna kierowcy",
+  "Power steering" = "Wspomaganie kierownicy",
+  "Passengers airbag" = "Poduszka powietrzna pasażera",
+  "Electrically adjustable mirrors" = "Elektrycznie regulowane lusterka",
+  "Factory radio" = "Radio fabryczne",
+  "Immobilizer" = "Immobilizer",
+  "On-board computer" = "Komputer pokładowy"
+)
+
+# 4. Podmiana nazw na polskie
+top_features <- top_features %>%
+  mutate(
+    Features_PL = recode(Features_Clean, !!!feature_labels_pl)
+  )
+
+# 5. Wykres poziomy
+ggplot(top_features, aes(x = reorder(Features_PL, n), y = n)) +
+  geom_col(fill = "#010467") +
+  coord_flip() +
+  labs(
+    title = "Wykres słupkowy wyposażenia w samochodach",
+    x = "Wyposażenie",
+    y = "Liczba ogłoszeń"
+  ) +
+  theme(
+    plot.title = element_text(hjust = 0.5, margin = margin(b = 10))
+  )
+```
+
+Wykres przedstawia ranking najczęściej występujących elementów wyposażenia w bazie ogłoszeń. Najpopularniejsze są systemy bezpieczeństwa i podstawowego komfortu, takie jak ABS, centralny zamek oraz elektryczne szyby przednie. Wyniki wskazują, że większość samochodów oferowanych w ogłoszeniach posiada bogaty pakiet wyposażenia podstawowego. Nieco rzadziej występującymi dodatkami są elektrycznie regulowane lusterka, radio fabryczne, immobilizer i komputer pokładowy.
+
+## Wnioskowanie statystyczne\*\*
+
+## Zalezność ceny od dodatków
+
+```{r model zależności ceny od dodatków, echo=FALSE}
+
+df_ilosc <- dane2_pl %>%
+  mutate(
+    # Liczymy przecinki + 1 (prosty sposób na policzenie elementów w stringu)
+    Liczba_Dodatkow = str_count(Wyposazenie, ",") + 1) %>%
+  filter(Cena_PLN > 1000, Cena_PLN < 500000)
+
+# 1. PRZYGOTOWANIE MODELU LINIOWEGO
+model_lin <- lm(Cena_PLN ~ Liczba_Dodatkow, data = df_ilosc)
+r_sq <- summary(model_lin)$r.squared
+coef_wzrost <- coef(model_lin)[2] 
+
+# Przygotowujemy tekst do wyświetlenia na wykresie
+tekst_stat <- paste0("R² = ", round(r_sq, 2), "\n",
+                     "Wzrost: +", round(coef_wzrost, 0), " zł / dodatek")
+
+# 2. WYKRES Z BINNINGIEM
+ggplot(df_ilosc, aes(x = Liczba_Dodatkow, y = Cena_PLN)) +
+  
+  # A. BOXPLOTY GRUPOWANE
+  geom_boxplot(aes(group = cut_width(Liczba_Dodatkow, 5, boundary = 0)), 
+               fill = paleta_pg[3], 
+               color = "#333333",   
+               outlier.shape = NA,  
+               alpha = 0.8) +
+  
+  # B. LINIA TRENDU
+  geom_smooth(method = "lm", color = paleta_pg[2], size = 1.2, se = FALSE) + 
+  
+  # C. STATYSTYKI NA WYKRESIE
+  annotate("text", x = 10, y = 140000, label = tekst_stat, 
+           hjust = 0, color = paleta_pg[1], fontface = "bold", size = 4) +
+  
+  # D. Formatowanie osi
+  scale_y_continuous(
+    labels = scales::label_number(suffix = " zł", big.mark = " "), 
+    limits = c(0, 160000) 
+  ) +
+  scale_x_continuous(breaks = seq(0, 80, 10)) + 
+  
+  labs(
+    # TU POPRAWKA: str_wrap łamie tekst po 60 znakach
+    title = stringr::str_wrap("Wykres pudełkowy ceny w zależności od deklarowanej ilości elementów wyposażenia", width = 60),
+    subtitle = "Zależność ceny od liczby elementów wyposażenia (grupowanie co 5)",
+    x = "Liczba elementów wyposażenia",
+    y = "Cena ofertowa"
+  ) +
+  theme_pg()
+```
+
+Wykres pudełkowy boxplot przedstawia zależność pomiędzy liczbą deklarowanych elementów wyposażenia a ceną ofertową samochodu. Na wykres naniesiono czerwona linię trendu, która pokazuje ogólną tendencję rynku. Linia trendu wyraźnie rośnie, co potwierdza, że wraz ze wzrostem liczby dodatkowych opcji (np. klimatyzacja, czujniki) rośnie również cena ofertowa pojazdu. Dla małej liczby elementów wąsy pudełek są bardzo długie, a ceny są zaskakująco wysokie. Może to świadczyć o tym, że w ogłoszeniach znajduja się bardzo drogie samochody, w których nie wymieniono posiadanych elementów wyposażenia, lub są to błędy w opisach ogłoszeń. W przedziale 20-60 elementów wyposażenia mediana ceny stopniowo wzrasta. Powyżej 60 elementów wyposażenia mediana zaczyna się wahać, co prawdopodobnie wynika z mniejszej liczby obserwacji w tym przedziale.
+
+## Wpływ wybranych elementów wyposażenia na cenę samochodu
+
+```{r, echo=FALSE}
+# 1. PRZYGOTOWANIE DANYCH
+df_analiza_luksus <- dane2_pl %>%
+  filter(Cena_PLN > 5000, Cena_PLN < 300000) %>% 
+  mutate(
+    Skora      = ifelse(str_detect(Wyposazenie, "Leather upholstery"), "Z dodatkiem", "Bez"),
+    Nawigacja  = ifelse(str_detect(Wyposazenie, "GPS navigation"), "Z dodatkiem", "Bez"),
+    Ksenony    = ifelse(str_detect(Wyposazenie, "Xenon lights"), "Z dodatkiem", "Bez"),
+    Szyberdach = ifelse(str_detect(Wyposazenie, "Sunroof"), "Z dodatkiem", "Bez")
+  )
+
+df_long <- df_analiza_luksus %>%
+  select(Cena_PLN, Skora, Nawigacja, Ksenony, Szyberdach) %>%
+  pivot_longer(cols = c(Skora, Nawigacja, Ksenony, Szyberdach), 
+               names_to = "Rodzaj_Dodatku", 
+               values_to = "Status")
+
+# 2. POPRAWIONY WYKRES (Kolory PG + Styl)
+ggplot(df_long, aes(x = Rodzaj_Dodatku, y = Cena_PLN, fill = Status)) +
+  geom_boxplot(
+    outlier.color = "grey80", 
+    outlier.size = 0.5, 
+    outlier.alpha = 0.2,
+    color = "#333333", # Ciemne obramowanie boxów
+    alpha = 0.9        # Lekka przezroczystość
+  ) +
+  
+  # Średnia jako biały romb
+  stat_summary(fun = mean, geom = "point", shape = 18, size = 3, color = "white", 
+               position = position_dodge(width = 0.75)) +
+  
+  coord_cartesian(ylim = c(0, 180000)) + 
+  scale_y_continuous(labels = scales::label_number(scale = 0.001, suffix = "k zł", big.mark = " ")) +
+  
+  # --- ZMIANA KOLORÓW NA PG ---
+  scale_fill_manual(values = c(
+    "Bez" = paleta_pg[6],         # Szary/Białawy (Tło)
+    "Z dodatkiem" = paleta_pg[1]  # PG Granat (Wyróżnienie)
+  )) +
+  # ----------------------------
+
+  labs(
+    title = "Wykres pudełkowy wpływu elementu na cenę",
+    subtitle = "Test Manna-Whitneya potwierdza istotne różnice median (p < 0.05)",
+    x = "", # Puste, bo nazwy są pod słupkami
+    y = "Cena ofertowa",
+    fill = "Status wyposażenia"
+  ) +
+  theme_pg() +
+  theme(
+    legend.position = "top",
+    panel.grid.major.x = element_blank()
+  )
+
+# 3. TABELA WYNIKÓW (Bez zmian, jest OK)
+tabela_wplywu <- df_long %>%
+  group_by(Rodzaj_Dodatku, Status) %>%
+  summarise(Srednia_Cena = mean(Cena_PLN, na.rm = TRUE), .groups = 'drop') %>%
+  pivot_wider(names_from = Status, values_from = Srednia_Cena) %>%
+  mutate(
+    Roznica_PLN = `Z dodatkiem` - Bez,
+    Roznica_Procent = round((Roznica_PLN / Bez) * 100, 1)
+  ) %>%
+  arrange(desc(Roznica_PLN))
+
+```
+
+*"Ze względu na niespełnienie założenia o normalności rozkładu zmiennej cenowej (rozkład prawoskośny), do weryfikacji istotności różnic cen zastosowano nieparametryczny test U Manna-Whitneya zamiast testu t-Studenta. Dla wszystkich analizowanych elementów wyposażenia (skóra, nawigacja, ksenony, szyberdach) test wykazał różnice istotne statystycznie (p-value \< 0.001), co potwierdza hipotezę o wpływie wyposażenia dodatkowego na pozycjonowanie cenowe pojazdu."*
+
+# **Zastosowanie Uczenia Maszynowego (ML) w detekcji okazji rynkowych**
+
+## Model wyceny (Las Losowy)
+
+```{r testowy model znajdywacza okazji na podstawie lasu losowego, echo=FALSE}
+# 1. Wybór kolumn do modelu  
+
+# Wybieramy tylko te, które realnie wpływają na cenę. 
+
+dane_model <- dane2_pl %>% 
+  select(
+    Cena_PLN, 
+    Rok_produkcji,      # Korelacja 0.43
+    Przebieg_km,        # Korelacja -0.49 (Silna ujemna)
+    Moc_KM,             # Korelacja 0.62 (Najsilniejsza!)
+    Marka,              # V-Cramera 0.23
+    Rodzaj_paliwa,      # V-Cramera 0.16 (Słabe, ale zostawiamy merytorycznie)
+    Skrzynia_biegow,    # V-Cramera 0.55 (Kluczowa zmienna jakościowa)
+    Naped,              # V-Cramera 0.21
+    Typ_pojazdu         # V-Cramera 0.28 (Dodane! Ważniejsze niż Marka)
+    # Kolor wyrzucamy (0.17 - zbyt mały wpływ)
+  ) %>% 
+  filter(Cena_PLN > 1000) %>%  
+  na.omit()
+# 2. Trening modelu  
+
+set.seed(123)  
+
+model_rf <- ranger(formula = Cena_PLN ~ ., data = dane_model, num.trees = 200)  
+
+
+# 3. Predykcja - wyceniamy każde auto
+dane_model$Cena_Fair <- predict(model_rf, data = dane_model)$predictions 
+
+ # 4. Obliczamy "Wskaźnik Okazji"  
+
+# Jeśli wynik jest UJEMNY, to znaczy że auto jest TAŃSZE niż powinno (Okazja)
+dane_model <- dane_model %>% mutate( Roznica_PLN = Cena_PLN - Cena_Fair, Roznica_Procent = round((Roznica_PLN / Cena_Fair) * 100, 2), Status = case_when( Roznica_Procent < -15 ~ "Super Okazja (-15%)", Roznica_Procent < -5 ~ "Dobra Cena", Roznica_Procent > 15 ~ "Mocno Przepłacone", TRUE ~ "Cena Rynkowa" ) ) 
+
+ggplot(dane_model, aes(x = Cena_PLN, y = Cena_Fair)) +  
+
+# Rysujemy punkty, kolorujemy je wg statusu  
+
+geom_point(aes(color = Status), alpha = 0.5, size = 1.5) +  
+
+# Linia idealnej wyceny (x = y) 
+geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black", size = 1) +  
+
+# Kolory: Czerwony dla drogich, Zielony dla okazji 
+
+ scale_color_manual(values = c("Mocno Przepłacone" = "#e74c3c", "Cena Rynkowa" = "#95a5a6", "Dobra Cena" = "#3498db", "Super Okazja (-15%)" = "#2ecc71")) +  
+
+# Skale logarytmiczne, bo ceny aut różnią się drastycznie
+scale_x_log10(labels = scales::dollar_format(suffix = " zł", prefix="")) + scale_y_log10(labels = scales::dollar_format(suffix = " zł", prefix="")) + labs( title = "Wykres różnicy w wycenie między danymi a modelem", subtitle = "Punkty powyżej przerywanej linii to auta niedoszacowane (okazje)", x = "Cena z ogłoszenia (PLN)", y = "Cena wyliczona przez model (PLN)" ) + theme_minimal() + theme(legend.position = "bottom") + theme_pg()
+
+
+```
+
+Proces budowy modelu predykcyjnego poprzedzono selekcją zmiennych opartą na wcześniejszej analizie korelacji. Proces uczenia algorytmu Random Forest przeprowadzono na zestawie 200 drzew decyzyjnych. Do treningu wybrano wyłącznie cechy wykazujące istotny statystycznie związek z ceną pojazdu:
+
+1.  Zmienne ilościowe: Na podstawie macierzy korelacji Pearsona włączono Moc silnika, która okazała się najsilniejszym predyktorem liniowym, a także Przebieg oraz Rok produkcji.
+
+2.  Zmienne jakościowe: W oparciu o analizę V-Craméra, jako kluczowy parametr kategoryczny zidentyfikowano Skrzynię biegów , która determinuje segment cenowy silniej niż Marka czy Rodzaj paliwa. Do modelu włączono również Typ nadwozia oraz Napęd, pomijając cechy o znikomym wpływie, takie jak Kolor, aby uniknąć zaszumienia modelu.
+
+Tak skonstruowany model osiągnął współczynnik determinacji $R^2$ na poziomie 0.85, co oznacza, że wyselekcjonowany zestaw 8 cech pozwala wyjaśnić 85% zmienności cen na badanym rynku. Pozostałe 15% zmienności wynika prawdopodobnie ze stanu technicznego, historii wypadkowej lub opisu wizualnego, których model nie uwzględnia.
+
+Wykres punktowy w skali logarytmicznej obrazuje skuteczność modelu w konfrontacji z rzeczywistością rynkową:
+
+-   Oś X reprezentuje cenę z ogłoszenia (rzeczywistą).
+
+-   Oś Y przedstawia "Cenę Fair" wyliczoną przez algorytm.
+
+-   Linia przerywana (x=y) wyznacza punkt idealnej wyceny.
+
+Na podstawie różnicy między predykcją a ceną ofertową zdefiniowano segmenty atrakcyjności ofert. Punkty znajdujące się powyżej linii diagonalnej (oznaczone kolorem zielonym) to tzw. "Super Okazje", gdzie cena rzeczywista jest niższa o ponad 15% od szacowanej wartości rynkowej modelu. Z kolei punkty czerwone poniżej linii sugerują oferty mocno przeszacowane.
+
+## Analiza segmentów cenowych w modelu lasu losowego
+
+```{r analiza wyszukiwarki okazji, wzięcie pod uwagę defektów ukrytych, echo=FALSE}
+# KROK 1: Przygotowanie danych pod wykres (czyszczenie wizualne)
+dane_plot <- dane_model %>%
+  mutate(Segment = case_when(
+    Cena_Fair < 15000 ~ "Segment Tani (<15k)",
+    Cena_Fair < 50000 ~ "Segment Średni (15k-50k)",
+    TRUE ~ "Segment Premium (>50k)"   )) %>%
+# Ustawiamy kolejność segmentów na wykresie
+  mutate(Segment = factor(Segment,
+        levels = c("Segment Tani (<15k)", "Segment Średni (15k-50k)", "Segment Premium (>50k)"))) %>%
+filter(Cena_PLN < 1000000) %>%
+  filter(Cena_PLN > 1000)
+
+# Wykres rozkładu błędu w segmentach
+ggplot(dane_plot, aes(x = Segment, y = Roznica_Procent, fill = Segment)) +
+  geom_violin(trim = FALSE, alpha = 0.6) +
+  # Skrzypce pokazują gęstość
+  geom_boxplot(width = 0.1, fill = "white", alpha = 0.8) +
+  # Boxplot w środku pokazuje medianę
+# Ograniczamy oś Y, żeby pokazać główny nurt (bez ekstremalnych błędów 1000%)
+  coord_cartesian(ylim = c(-100, 100)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  scale_fill_viridis_d() +
+  labs(title = "Wykres skrzypcowy błędu modelu w zależności od segmentu cenowego",
+       subtitle = "Im szerszy kształt, tym częściej model trafia w punkt.",
+       y = "Błąd wyceny (%)",x = "") +
+  theme(legend.position = "none")  
+
+```
+
+Wykres skrzypcowy z zagnieżdżonym wykresem pudełkowym ilustruje rozkład błędu względnego predykcji w podziale na trzy segmenty cenowe. Oś pozioma wyznacza punkt idealnej estymacji. Analiza ujawnia fundamentalne różnice w przewidywalności poszczególnych segmentów rynku. Segment Premium (\>50 tys. zł) charakteryzuje się najwyższą precyzją modelu. Rozkład jest silnie skoncentrowany wokół zera, a wąski rozstęp międzykwartylowy świadczy o niskiej wariancji błędów. Dla drogich aut model działa z niemal chirurgiczną precyzją. Segment Tani (\<15 tys. zł) wykazuje najniższą stabilność predykcji. Rozkład jest mocno wydłużony w pionie, co wskazuje na duże odchylenia standardowe i trudność w oszacowaniu wartości pojazdów budżetowych. Jest to prawdopodobnie spowodowane brakiem opisu stanu technicznego pojazdu lub innych wad ukrytych w dostępnych danych. We wszystkich segmentach widoczne są długie ogony, reprezentujące skrajne pomyłki modelu. Mogą one wynikać z anomalii w danych, których model nie był w stanie wyłapać na podstawie dostępnych cech.
+
+## Czynniki wpływające na wycenę modelu
+
+```{r, include=FALSE}
+# 1. ZMIENNA Y DLA EXPLAINERA - musi to być PRAWDZIWA cena, a nie predykcja!
+cena_prawdziwa <- dane_model$Cena_PLN
+
+# 2. DANE WEJŚCIOWE - tylko zmienne objaśniające (te które model faktycznie używa)
+dane_explainer <- dane_model %>% 
+  select(-Cena_PLN, -Cena_Fair, -Roznica_PLN, -Roznica_Procent, -Status)
+
+predict_function <- function(model, newdata) {
+  predict(model, data = newdata)$predictions}
+
+explainer <- DALEX::explain(
+  model = model_rf,
+  data = dane_explainer,  # TYLKO zmienne objaśniające
+  y = cena_prawdziwa,     # Prawdziwe ceny z OLX
+  predict_function = predict_function,
+  label = "Las losowy ofert")
+```
+
+```{r DALEX 1, echo=FALSE}
+
+
+# 1. Liczymy ważność (bez zmian)
+vi <- variable_importance(explainer, loss_function = loss_root_mean_square)
+
+plot(vi, max_vars = 10) +
+  # Kolory specyficzne dla wykresów DALEX (nadpisujemy domyślne)
+  scale_color_manual(values = c("_full_model_" = "black", "_baseline_" = "black", "permutation" = "#010467")) +
+  
+  labs(
+    # Łamiemy tekst tytułu (width = 60 znaków)
+    title = str_wrap("Wykres słupkowy ważności zmiennych (Feature Importance)", width = 60),
+    
+    # Łamiemy tekst podtytułu
+    subtitle = str_wrap("Ranking ważności zmiennych w modelu (Wzrost błędu RMSE po permutacji)", width = 60),
+    
+    x = "Wzrost błędu (RMSE)",
+    y = "" # Pusta etykieta Y, bo nazwy zmiennych mówią same za siebie
+  ) +
+
+  theme_pg() + 
+  theme(
+    legend.position = "none", # Ukrywamy legendę, bo kolory są oczywiste
+    
+    # Formatowanie tytułu i podtytułu (odstępy między liniami - lineheight)
+    plot.title = element_text(face = "bold", size = 14, color = "navy"),
+    plot.subtitle = element_text(lineheight = 1.2, color = "#0939FA", size = 10),
+    
+    # Marginesy: góra, prawa, dół, lewa (dodajemy miejsca z prawej na długie paski)
+    plot.margin = margin(t = 10, r = 20, b = 10, l = 10)
+  )
+```
+
+Wykres słupkowy prezentuje ranking ważności zmiennych w modelu Lasu Losowego, oparty na wzroście błędu RMSE po permutacji cech. Analiza ujawnia, że bezapelacyjnie najważniejszym determinantem ceny jest Moc silnika. Jej usunięcie powoduje największą degradację modelu, co czyni ją fundamentem wyceny. Na podium znajdują się również Rok produkcji oraz Przebieg, potwierdzając rynkową regułę, że wiek i stopień wyeksploatowania sterują utratą wartości. Cechy kategoryczne, takie jak Marka czy Skrzynia biegów, mają zauważalnie mniejszy wpływ. Sugeruje to, że algorytm kieruje się przede wszystkim twardymi danymi technicznymi, traktując prestiż producenta czy rodzaj napędu jako czynniki drugorzędne względem parametrów użytkowych.
+
+## Analiza wpływu jednej zmiennej
+
+```{r DALEX 2, echo=FALSE}
+
+
+# 1. Liczymy profil dla Mocy
+# Upewnij się, że zmienna nazywa się tak jak w modelu (Moc_KM lub Power_HP)
+pdp_power <- model_profile(explainer, variables = "Moc_KM") 
+
+# 2. Rysujemy z "Podwójną Lupą" (Zoom na X i Y)
+plot(pdp_power) +
+  # Wymuszenie koloru Czerwonego PG
+  scale_color_manual(values = c("Las losowy ofert" = "#ff0f0f", "Random Forest OLX" = "#ff0f0f")) +
+  
+  # Oś Y: Formatowanie waluty + Zoom do 200k
+  scale_y_continuous(
+    labels = scales::dollar_format(suffix=" zł", prefix="", big.mark=" "),
+    limits = c(0, 200000) # <--- TU JEST TWOJA ZMIANA (Przycięcie góry)
+  ) +
+  
+  # Oś X: Formatowanie mocy + Zoom do 400 KM
+  scale_x_continuous(
+    labels = scales::label_number(suffix = " KM"),
+    limits = c(50, 400)   # To zostawiamy, żeby nie pokazywać "potworów" 800 KM
+  ) +
+  
+  labs(
+    title = "Wykres liniowy ceny w zależności od mocy",
+    subtitle = "Zależność ceny od mocy silnika (Zoom na segment popularny < 200 tys. zł)",
+    x = "Moc silnika (KM)",
+    y = "Przewidywana cena (PLN)"
+  ) +
+  
+  theme_pg() +
+  theme(legend.position = "none")
+
+```
+
+## Anatomia Ceny: Case Study
+
+Wykres zależności cząstkowej ilustruje wpływ mocy silnika na predykcję ceny w segmencie popularnym. Krzywa ujawnia silną, niemal liniową korelację dodatnią: w badanym przedziale 50–400 KM każdy przyrost mocy przekłada się na stabilny wzrost wartości rynkowej pojazdu. Brak wyraźnego spłaszczenia wykresu dowodzi, że rynek konsekwentnie premiuje dynamikę jazdy – klienci są skłonni dopłacać za każdy dodatkowy koń mechaniczny, niezależnie od tego, czy mowa o aucie miejskim, czy sportowym. Potwierdza to status mocy jako liniowego wyznacznika wartości.
+
+```{r Dalex 3, echo=FALSE}
+
+# Wybieramy przykładowe auto (np. wiersz nr 100)
+
+new_observation <- dane_explainer[100, ] 
+
+# 1. Wybór obserwacji i obliczenia (bez zmian)
+bd <- predict_parts(explainer, new_observation = new_observation, type = "break_down")
+
+# 2. Rysujemy (Używamy wbudowanych argumentów koloru)
+plot(bd, 
+     max_features = 8, 
+     digits = 0,
+     # --- TU JEST ROZWIĄZANIE ---
+     # Zamiast scale_fill_manual, podajemy kolory bezpośrednio do DALEXa:
+     col_up = "#010467",        # Granat (Wzrost ceny)
+     col_down = "#ff0f0f",      # Czerwień (Spadek ceny)
+     col_intercept = "#333333", # Szary (Start)
+     col_prediction = "#333333" # Szary (Wynik)
+     # ---------------------------
+) + 
+  
+  # Expansion zostawiamy, żeby liczby się mieściły
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.35))) +
+  
+  # Tytuły
+  labs(
+    title = "Wykre waterfall ceny",
+    subtitle = paste0("Dlaczego to auto wyceniono na ", 
+                      format(round(predict(model_rf, new_observation)$predictions), big.mark = " "), 
+                      " zł?"),
+    y = "Wartość (PLN)"
+  ) +
+  
+  theme_pg() +
+  theme(
+    plot.subtitle = element_text(color = "#0939FA", size = 12),
+    legend.position = "none",
+    plot.margin = margin(t = 10, r = 20, b = 10, l = 10) 
+  )
+```
+
+Wykres kaskadowy przedstawia szczegółową dekompozycję wyceny dla analizowanego pojazdu (Alfa Romeo, 2014). Punktem odniesienia jest wartość bazowa wynosząca 61 126 zł, reprezentująca średnią rynkową w badanym zbiorze. Analiza wkładu poszczególnych cech ujawnia, że kluczowymi czynnikami drastycznie obniżającymi wartość tego konkretnego egzemplarza są parametry układu napędowego. Niska moc silnika odpowiada za największą korektę obiżającą wartość, pomniejszając wycenę aż o 18 456 zł. Znaczący wpływ ma również manualna skrzynia biegów, która redukuje wartość o kolejne 8 194 zł. W mniejszym stopniu na obniżkę wpływa przebieg. Z drugiej strony, cechy takie jak rocznik 2014, rodzaj paliwa oraz marka, działają stymulująco, generując łączne odbicie ceny o około 3 500 zł. Ostateczna predykcja modelu wynosi 27 793 zł, co stanowi wypadkową średniej rynkowej oraz indywidualnych cech pojazdu. Kolorystyka wykresu wizualnie rozdziela atrybuty podnoszące lub obniżające wycenę końcową, gdzie kolor granatowy pokazuje ostateczną wycenę modelu.
+
+# **Podsumowanie**
+
+Celem projektu było podkreślenie istotnych czynników wpływających na wycenę pojazdów na rynku wtórnym oraz ocenę przydatności zaawansowanych metod przerowadzenia analizy w procesie estymacji cen i detekcji anomilii rynkowcyh. Przeprowadzone analizy statyczne oraz modelowanie ekonometrycznych pozwoliły na sformułowanie odpowiedzi na postawione pytania badawcze.
+
+**Wnioski końcowe** oparte na wynikach uzyskanych w poszczególnych etapach analizy.
+
+Analiza wstępna i czyszczenie danych pozwoliły w początkowej fazie przeprowadzić prace nad przygotowaniem danych. Obejmowało to usuwanie ofert z błędnymi informacjami, takimi jak nierealistyczny przebieg lub cena, oraz identyfikację i eliminację emisji. Te działania zapewniły stabilność i jakość danych dla modeli analitycznych.
+
+Podczas analizy eksploracyjnej do analizy rozkładów zmiennych wykorzystano wizualizacje. To pozwoliło zauważyć, że większość samochodów ma niższą cenę (rozkład cen po prawej stronie), a także wstępnie ocenić, w jaki sposób wiek, przebieg i wyposażenie wpływają na koszty.
+
+W analizie statystycznej za pomocą testów, takich jak test t – Studenta i ANOVA, potwierdzono silny związek między cechami, takimi jak sprzęt lub typ napędu, a ceną samochodu, co wskazuje na ich znaczenie jako predyktorów, chociaż nie były one bezpośrednio związane z parametrami technicznymi.
+
+Budowa i ocena losowego modelu random forest wykazały, że relacje na rynku samochodów używanych mają charakter złożony i nieliniowy, co dobrze tłumaczy się przez metody zespołów, które sprawdzają się lepiej niż uproszczone modele liniowe.
+
+### **Wnioski dotyczące pytań badawczych**
+
+Analiza korelacji oraz badanie ważności cech w modelu Ransom Forest wykazały, że wiek wykazały, że wiek pojazdu (rok produkcji) oraz przebieg są najsilniejszymi, negatywnimi determinami ceny. Spośród paametrów technicznych, kluczowy pozytywny wpływ na wartość rynkową wykazują moc silnika. Zauważalna jest nieliniowa zależność, gdzie wpływ przebiegu na cenę maleje wraz z wiekiem pojazdu, co potwiedzają wykresy.
+
+Dynamika utaraty wartości nie jest jednorodna dla całego rynku. Analiza porównawcza krzywych deprecjacji ujawniła w jaki sposób samochody tracą na wartości, znalazło znaczące różnice między markami popularnymi a segmentem premium. Samochody premium, pomimo wyższej ceny początkowej, tracą na wartości bezwzględnej szybciej we wczesnych latach eksploatacji. Jednak z biegiem czasu, wraz z wiekiem, wykazują lepszą zdolność do "utrzymania ceny", co wskazuje na rosnące znaczenie marki i prestiżu w kształtowaniu wartości wraz z wiekiem.
+
+Przez prowadzone testy statystyczne ujawniło, że obecność elementów wyposażenia dodatkowego ( takich jak skórzana tapicerka, zaawansowane systemy multimedialne itd.) w sposób istotny statyczne różnicue średnią cenę ofertową. Obecność tych komponentów w samochodzie przyczynia się do wzrostu jego wartości rezydualnej. Jednocześnie wysokość tej premii cenowej za wyposażenie różni się znacznie w zależności od klasy samochodu: jest znacznie wyższa w przypadku samochodów premium i SUV-ów w porównaniu z segmentem aut miejskich.
+
+Zastosowanie algorytmu Random Forest pozwoliło na uzyskanie modelu o wysokej zdolności predykcyjnej, przewyższającej tradycyjne modele regresji liniowej. Analiza pozostałości reprezentujących błędy prognozowania przyczyniła się do skutecznej identyfikacji anomalii cenowych. Oferty, dla których model przewidywał cenę znacznie wyższą niż rzeczywista, można interpretować jako potencjalne możliwości rynkowe. Model wykazał maksymalną dokładność w segmencie pojazdów o średniej cenie, natomiast w przypadku pojazdów unikatowych (z ekstremalnie wysokimi cenami lub niestandardową konfiguracją) nastąpił pewien wzrost błędu prognozowania.
+
+### **Podsumowanie**
+
+Badania potwierdzają, że rynek samochodów używanych funkcjonuje sprawnie, gdzie ceny kształtują liczne wymierne czynniki. Udowodniono możliwość opracowania dokładnego narzędzia do automatycznej oceny pojazdów, uwzględniającego nie tylko podstawowe dane (wiek, przebieg), ale także charakterystykę marki i kompleksowość wyposażenia.
