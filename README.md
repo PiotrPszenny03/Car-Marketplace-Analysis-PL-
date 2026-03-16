@@ -1,6 +1,6 @@
 # Car Marketplace Analysis
 # Project Goal
-The primary objective of this project was to conduct a multidimensional analysis of the secondary car market in Poland and build an interpretable machine learning model to automatically estimate vehicle prices and detect market opportunities.
+The primary objective of this project, **Car Marketplace Analysis**, was to conduct a multidimensional analysis of the secondary car market in Poland and build an interpretable machine learning model to automatically estimate vehicle prices and detect market opportunities.
 Unlike standard statistical reports, this project covers the full data science lifecycle. It allows stakeholders to:
 *   **Understand Market Structure:** Explore how prices, depreciation, and features vary across brands and regions using advanced interactive visualizations.
 *   **Identify Key Price Determinants:** Statistically verify which technical parameters and equipment pieces genuinely drive a vehicle's value.
@@ -15,7 +15,7 @@ Unlike standard statistical reports, this project covers the full data science l
 *   **DALEX** – Used for Descriptive Machine Learning Explanations (Variable Importance, Partial Dependence Profiles, and Break-Down plots).
 *   **naniar & VIM** – For missing data visualization and advanced hot-deck imputation.
 # 📊 Key Features & Architecture
-**Agent/Module 1: Data Preprocessing & Validation**
+**Module 1: Data Preprocessing & Validation**
 *   **The Insight:** Automatically handles missing data and applies strict rule-based validation (e.g., verifying realistic mileage and price ranges).
 *   **Business Value:** Cleans the raw data from scraped listings, ensuring that the predictive models are trained on reliable, high-quality information without anomalies.
 **Module 2: Market Exploratory & Spatial Analysis**
@@ -29,20 +29,23 @@ Unlike standard statistical reports, this project covers the full data science l
 *   **Business Value:** Delivers a transparent verdict on pricing. It breaks down the price of a chosen car to show exactly how much value is added or subtracted by its mileage, engine power, or specific transmission type.
 # 📂 Project Structure
 The repository is organized as follows:
-*   [Projekt.Rmd](cci:7://file:///c:/Users/PC/Downloads/Projekt.Rmd:0:0-0:0) - The core R Markdown file containing all the data processing logic, exploratory analysis, and ML model definitions.
+*   `Car_Marketplace_Analysis.Rmd` - The core R Markdown file containing all the data processing logic, exploratory analysis, and ML model definitions.
+*   `Car_Marketplace_Analysis.html` - The pre-rendered, interactive HTML report containing all visualizations, code outputs, and findings.
 *   `Car_sale_ads.csv.zip` - The compressed dataset containing the used car sales offers (March–May 2021).
 *   `x.css` - Custom stylesheet used for formatting the HTML output report.
 *   `README.md` - Project documentation (This file).
 # 🚀 How to Run
-1.  Clone this repository to your local machine.
-2.  Ensure you have **R** and **RStudio** installed.
-3.  Install the necessary dependencies by running the following in your R console:
+The project has already been processed and rendered into a convenient, interactive HTML format.
+1.  Clone this repository to your local machine or download the files.
+2.  Open the `Car_Marketplace_Analysis.html` file in any modern web browser to view the interactive report, plots, and insights.
+*(Optional)* If you wish to re-run the code or modify the models:
+1.  Ensure you have **R** and **RStudio** installed.
+2.  Install the necessary dependencies by running the following in your R console:
     ```R
     install.packages(c("tidyverse", "ggplot2", "plotly", "leaflet", "ranger", "DALEX", "naniar", "validate", "giscoR"))
     ```
-4.  Make sure the `Car_sale_ads.csv.zip` file is located in the same directory as the project files.
-5.  Open [Projekt.Rmd](cci:7://file:///c:/Users/PC/Downloads/Projekt.Rmd:0:0-0:0) in RStudio.
-6.  Click the **"Knit"** button (or press `Ctrl+Shift+K`) to run the complete analysis pipeline and generate the interactive HTML report.
+3.  Ensure the `Car_sale_ads.csv.zip` file is located in the same directory as the [.Rmd](cci:7://file:///c:/Users/PC/Downloads/Projekt.Rmd:0:0-0:0) file.
+4.  Open `Car_Marketplace_Analysis.Rmd` in RStudio and click the **"Knit"** button to regenerate the report.
 # 👤 Authors
 **Piotr Pszenny, Polina Glamozdova, Julia Kolerska**
 *Data Science Project*
