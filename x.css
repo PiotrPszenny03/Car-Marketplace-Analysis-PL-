@@ -1,0 +1,102 @@
+/* --- GŁÓWNE USTAWIENIA STRONY --- */
+body {
+  font-family: 'Arial', sans-serif;
+  font-size: 13.7pt; /* Zgodnie z wytycznymi */
+  background-color: #ffffff;
+  color: #333333; /* Ciemnoszary tekst jest czytelniejszy niż czysty czarny */
+  line-height: 1.6;
+}
+
+/* --- NAGŁÓWKI --- */
+
+/* H1 - Tytuł główny raportu (Belka nawiązująca do Slajdu 1) */
+h1.title {
+  background-color: #010467; /* PG Granat */
+  color: #ffffff;
+  padding: 20px;
+  font-size: 28pt; /* Większy dla tytułu głównego */
+  font-weight: bold;
+  margin-top: 0;
+  border-bottom: 5px solid #ff0f0f; /* PG Czerwony pasek na dole */
+  text-align: center;
+}
+
+/* H1 wewnątrz tekstu (jeśli używasz #) */
+h1 {
+  color: #010467;
+  font-size: 22pt;
+  border-bottom: 2px solid #010467;
+  margin-top: 40px;
+}
+
+/* H2 - Sekcje główne */
+h2 {
+  color: #ff0f0f; /* PG Czerwony */
+  font-size: 18pt; /* Zgodnie z wytycznymi */
+  font-weight: bold;
+  border-left: 5px solid #010467; /* Granatowy akcent z lewej */
+  padding-left: 10px;
+  margin-top: 30px;
+}
+
+/* H3 - Podsekcje */
+h3 {
+  color: #010467;
+  font-size: 16pt;
+  font-weight: bold;
+}
+
+/* --- LINKI --- */
+a {
+  color: #ff0f0f;
+  text-decoration: none;
+  font-weight: bold;
+}
+a:hover {
+  color: #010467;
+  text-decoration: underline;
+}
+
+/* --- BLOKI KODU (Code Chunks) --- */
+pre {
+  background-color: #f4f4f4;
+  border: 1px solid #dcdcdc;
+  border-left: 5px solid #010467; /* Granatowy pasek przy kodzie */
+  border-radius: 3px;
+  padding: 10px;
+}
+
+code {
+  font-family: 'Courier New', monospace;
+  font-size: 11pt;
+}
+
+/* --- TABELE --- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+}
+thead th {
+  background-color: #010467;
+  color: #ffffff;
+  padding: 10px;
+  text-align: left;
+}
+tbody tr:nth-child(even) {
+  background-color: #BADEFF; /* Jasnoniebieski z palety - co drugi wiersz */
+}
+tbody td {
+  padding: 8px;
+  border-bottom: 1px solid #ddd;
+}
+
+/* --- LOGO W HEADERZE --- */
+/* To klasa, którą dodamy w RMarkdown */
+.header-logo {
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  width: 250px; /* Dostosuj wielkość */
+  z-index: 1000;
+}
